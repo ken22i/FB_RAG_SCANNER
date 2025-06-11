@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "FB Post Downloader",
+  "version": "1.2.3",
+  "description": "一鍵下載Facebook單篇貼文內容與留言,並自動下載圖片。",
+  "permissions": ["scripting", "downloads", "activeTab"],
+  "host_permissions": ["https://www.facebook.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.facebook.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

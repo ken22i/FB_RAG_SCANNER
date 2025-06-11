@@ -1,0 +1,482 @@
+﻿負責人,功能,HTTP method,api,傳入資料,傳入資料欄位說明,Good Case回傳資料 (json) ,回傳資料欄位說明,Bad Case回傳資料 (json) ,JWT保護,帳號類型
+4J,建立一個新的 RAG 任務，並於背景執行,POST,/api/v1/rag,"{
+        ""project_id"": project_id,
+         ""scenario"": {
+                ""direction"": ""both"",
+                ""role_desc"": ""你是RAG助手，負責比較文本相似度"",
+                ""reference_desc"": ""Reference 為參考文本，用於比對"",
+                ""input_desc"": ""Input 為輸入文本，需要與參考文本進行比對"",
+                ""rag_k"": 3,
+                ""rag_k_forward"": 3,
+                ""rag_k_reverse"": 3,
+                ""cof_threshold"": 0.5,
+                ""scoring_rule"": ""請根據文本相似度給出信心分數，並標記出相似       的文本片段"",
+                ""llm_name"": ""openai""
+            },
+        ""input_data"": {
+            ""level1"": [
+                {
+                    ""sid"": f""input_{project_id}"",
+                    ""text"": input_text,
+                    ""metadata"": {""type"": ""test"", ""project"": project_id}
+                }
+            ]
+        },
+        ""reference_data"": {
+            ""level1"": [
+                {
+                    ""sid"": f""ref_{project_id}"",
+                    ""text"": ref_text,
+                    ""metadata"": {""type"": ""test"", ""project"": project_id}
+                }
+            ]
+        }
+}","JSON，對應 RAGRequest
+scenario部分可為空或輸入特定參數來覆寫yml檔的預設設定
+meta_data也不是必填，填了做為文檔的額外屬性存儲
+scenario可傳入特定參數如下:
+1.role_desc (str)Optiona
+描述：RAG 助手的角色描述
+預設值：空字串
+範例：""你是防詐騙與合規比對助手""
+2.reference_desc (str)Optiona
+描述：參考資料的說明
+預設值：空字串
+範例：""Reference 為防詐騙樣式或外部法規""
+3.input_desc (str)Optiona
+描述：輸入資料的說明
+預設值：空字串
+範例：""Input 為使用者貼文或公司內規條文""
+處理方向與參數
+4.direction (str)Optiona
+描述：處理方向
+預設值：""forward""
+可選值：""forward"", ""reverse"", ""both""
+說明：
+forward：user_query = 貼文，Candidates = 標籤/外規
+reverse：user_query = 標籤，Candidates = 貼文
+both：雙向處理
+5.rag_k (int)Optiona
+描述：向量搜尋的結果數量
+預設值：5
+6.rag_k_forward (Optional[int])
+描述：forward 方向的向量搜尋結果數量
+預設值：None
+7.rag_k_reverse (Optional[int])
+描述：reverse 方向的向量搜尋結果數量
+預設值：None
+閾值與深度設定
+8.cof_threshold (float)Optional
+描述：信心分數閾值
+預設值：0.5
+範圍：0.0 到 1.0
+9.reference_depth (int)Optional
+描述：參考資料的處理深度
+預設值：1
+10.input_depth (int)Optional
+描述：輸入資料的處理深度
+預設值：1
+文本處理設定
+11.chunk_size (int)Optional
+描述：文本分塊大小
+預設值：0
+說明：如果大於 0，會將文本分割成指定大小的塊
+12.scoring_rule (str)Optional
+描述：評分規則說明
+預設值：空字串
+範例：
+Apply to schema_check...
+LLM 相關設定
+13.llm_name (Optional[str])
+描述：使用的 LLM 模型名稱
+預設值：None
+範例：""openai"", ""llama""
+14.max_prompt_tokens (int)Optional
+描述：提示詞的最大 token 數量
+預設值：8000
+15.input_data(str)
+描述:輸入值，須合乎階層格式如下
+{
+  ""level1"": [
+    {
+      ""sid"": ""唯一識別碼"",
+      ""text"": ""文本內容"",
+      ""metadata"": {} // 可選的額外資訊
+    }
+  ]
+}
+16.reference_data(str)
+描述:ref輸入值，須合乎階層格式如下
+{
+  ""level1"": [
+    {
+      ""sid"": ""唯一識別碼"",
+      ""text"": ""文本內容"",
+      ""metadata"": {} // 可選的額外資訊
+    }
+  ]
+}
+","{
+  ""job_id"": ""job_123"",
+  ""status"": ""pending"",
+  ""created_at"": ""2024-06-01T12:00:00.000000""
+}","job_id:此任務的id
+status:該任務創建狀態(succesful,fail,pending)
+created_at:該任務創建時間","// Case 1: 請求資料格式不符合
+HTTP 400 發送的senario格式不符要求的格式無法通過核心模組的schema checker
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""請求資料格式不符合 RAGRequest 指定格式"",
+      ""message_eng"": ""System problem, please contact administrator""
+    }
+  }
+}
+// Case 2: 系統資源不足
+HTTP 503 目前系統資源不足以讓新的任務再加入佇列
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""系統內部資源不足以創建新任務"",
+      ""message_eng"": ""System problem, please contact administrator""
+    }
+  }
+}
+
+//Case 3: 任務 id重複
+HTTP 409
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""任務 ID 已存在，請使用其他 ID"",
+      ""message_eng"": ""Job ID already exists, please use a different ID""
+    }
+  }
+}
+// Case 4: 系統錯誤
+HTTP 500 其他錯誤
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""系統發生問題，請連絡系統管理員"",
+      ""message_eng"": ""System problem, please contact administrator""
+    }
+  }
+}",YES,admin
+4J,查詢指定 job_id 的任務狀態,GET,/api/v1/rag/{job_id}/status,N/A,N/A," {
+    ""job_id"": ""21027e16-6edd-49cd-91ef-a72ca8b8676d"",
+    ""project_id"": ""project_2"",
+    ""status"": ""completed"",
+    ""progress"": 100.0,
+    ""error"": null,
+    ""created_at"": ""2025-05-21T06:31:24.384043"",
+    ""updated_at"": ""2025-05-21T06:31:28.966898"",
+    ""completed_at"": ""2025-05-21T06:31:28.966905"",
+    ""failed_at"": null
+  }","job_id:此任務的id
+project_id: 該任務隸屬與哪個專案下
+status:該任務目前狀態(completed,fail,pending)
+progress:進度百分比(0.0~100.0)
+created_at:該任務創建時間
+result:該任務結果
+error:該任務若未能順利執行會將錯誤顯示在這
+completed_at:該任務完成時間
+failed_at:該任務失敗時間","
+// Case 1: 任務不存在
+HTTP 404 Bad Request
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""任務不存在"",
+      ""message_eng"": ""Job not found""
+    }
+  }
+}
+
+
+//Case 2: 任務已過期
+HTTP 410 Gone
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""任務已過期"",
+      ""message_eng"": ""Job has expired""
+    }
+  }
+}
+
+//Case 3 : 任務獲取狀態超時
+HTTP 504 Gateway Timeout
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""獲取任務狀態超時"",
+      ""message_eng"": ""Timeout while getting job status""
+    }
+  }
+}
+// Case 4: 系統錯誤
+HTTP 500 其他錯誤
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""系統發生問題，請連絡系統管理員"",
+      ""message_eng"": ""System problem, please contact administrator""
+    }
+  }
+}",yes,user
+4J,查詢所有任務（可依 project_id 過濾）,GET,/api/v1/rag,N/A,N/A,"[
+  {
+    ""job_id"": ""21027e16-6edd-49cd-91ef-a72ca8b8676d"",
+    ""project_id"": ""project_2"",
+    ""status"": ""completed"",
+    ""progress"": 100.0,
+    ""results"": [
+      [
+        {
+          ""direction"": ""both"",
+          ""root_uid"": ""input-input_project_2"",
+          ""model"": ""openai"",
+          ""rag_k"": 1,
+          ""cof_threshold"": 0.5,
+          ""predictions"": [
+            {
+              ""input_uid"": ""user_query"",
+              ""input_text"": ""這是第二個測試輸入文本"",
+              ""ref_uid"": ""reference-ref_project_2"",
+              ""ref_text"": ""這是第二個測試參考文本"",
+              ""evidences"": [
+                ""這是第二個測試""
+              ],
+              ""start_end_idx"": [
+                [
+                  0,
+                  7
+                ]
+              ],
+              ""confidence"": 0.931,
+              ""similarity_score"": 0.9308731
+            }
+          ]
+        }
+      ]
+    ],
+    ""error"": null,
+    ""created_at"": ""2025-05-21T06:31:24.384043"",
+    ""updated_at"": ""2025-05-21T06:31:28.966898"",
+    ""completed_at"": ""2025-05-21T06:31:28.966905"",
+    ""failed_at"": null
+  },
+  {
+    ""job_id"": ""c959066f-03e2-46d1-a5a8-c21eefb857b8"",
+    ""project_id"": ""project_3"",
+    ""status"": ""completed"",
+    ""progress"": 100.0,
+    ""results"": [
+      [
+        {
+          ""direction"": ""both"",
+          ""root_uid"": ""input-input_project_3"",
+          ""model"": ""openai"",
+          ""rag_k"": 1,
+          ""cof_threshold"": 0.5,
+          ""predictions"": [
+            {
+              ""input_uid"": ""user_query"",
+              ""input_text"": ""這是第三個測試輸入文本"",
+              ""ref_uid"": ""reference-ref_project_3"",
+              ""ref_text"": ""這是第三個測試參考文本"",
+              ""evidences"": [
+                ""這是第三個測試""
+              ],
+              ""start_end_idx"": [
+                [
+                  0,
+                  7
+                ]
+              ],
+              ""confidence"": 0.931,
+              ""similarity_score"": 0.9311906
+            }
+          ]
+        }
+      ]
+    ],
+    ""error"": null,
+    ""created_at"": ""2025-05-21T06:31:24.393418"",
+    ""updated_at"": ""2025-05-21T06:31:29.919610"",
+    ""completed_at"": ""2025-05-21T06:31:29.919614"",
+    ""failed_at"": null
+  },
+  {
+    ""job_id"": ""00f485aa-46ca-4b72-958e-5448308e2914"",
+    ""project_id"": ""project_1"",
+    ""status"": ""completed"",
+    ""progress"": 100.0,
+    ""results"": [
+      [
+        {
+          ""direction"": ""reverse"",
+          ""root_uid"": ""input-input_project_1"",
+          ""model"": ""openai"",
+          ""rag_k"": 1,
+          ""cof_threshold"": 0.6,
+          ""predictions"": [
+            {
+              ""input_uid"": ""REF_UID"",
+              ""input_text"": ""這是第一個測試輸入文本"",
+              ""ref_uid"": ""input-input_project_1"",
+              ""ref_text"": ""這是第一個測試輸入文本"",
+              ""evidences"": [
+                ""這是第一個測試輸入文本""
+              ],
+              ""start_end_idx"": [
+                [
+                  0,
+                  11
+                ]
+              ],
+              ""confidence"": 1.0,
+              ""similarity_score"": 0.99999994
+            }
+          ]
+        }
+      ]
+    ],
+    ""error"": null,
+    ""created_at"": ""2025-05-21T06:31:24.395328"",
+    ""updated_at"": ""2025-05-21T06:31:28.702164"",
+    ""completed_at"": ""2025-05-21T06:31:28.702197"",
+    ""failed_at"": null
+  }
+]","job_id:此任務的id
+project_id: 該任務隸屬與哪個專案下
+status:該任務目前狀態(completed,fail,pending)
+result:該任務結果
+direction:rag執行方向(forwoard，reverse，both)
+root_uid:用來唯一識別一個完整的文件或資料集合({side}-{orig_sid}) side可為input或reference
+model:g: 使用模型名稱
+rag_k: 在前k筆中的資料搜索
+cof_threshold:取用這結果的信心度閥值
+prediction:預測結果","
+// Case 1: 專案 ID 無效
+HTTP 400 Bad Request
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""無效的專案 ID"",
+      ""message_eng"": ""Invalid project ID""
+    }
+  }
+}
+
+// Case 2: 系統錯誤
+HTTP 500 其他錯誤
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""系統發生問題，請連絡系統管理員"",
+      ""message_eng"": ""System problem, please contact administrator""
+    }
+  }
+}
+",YES,user
+4J,查詢指定 job_id 的任務結果,GET,/api/v1/rag/{job_id}/result,N/A,N/A," {
+    ""job_id"": ""21027e16-6edd-49cd-91ef-a72ca8b8676d"",
+    ""project_id"": ""project_2"",
+    ""results"": [
+      [
+        {
+          ""direction"": ""both"",
+          ""root_uid"": ""input-input_project_2"",
+          ""model"": ""openai"",
+          ""rag_k"": 1,
+          ""cof_threshold"": 0.5,
+          ""predictions"": [
+            {
+              ""input_uid"": ""user_query"",
+              ""input_text"": ""這是第二個測試輸入文本"",
+              ""ref_uid"": ""reference-ref_project_2"",
+              ""ref_text"": ""這是第二個測試參考文本"",
+              ""evidences"": [
+                ""這是第二個測試""
+              ],
+              ""start_end_idx"": [
+                [
+                  0,
+                  7
+                ]
+              ],
+              ""confidence"": 0.931,
+              ""similarity_score"": 0.9308731
+            }
+          ]
+        }
+      ]
+    ]
+  }","job_id:此任務的id
+project_id: 該任務隸屬與哪個專案下
+status:該任務目前狀態(completed,fail,pending)
+result:該任務結果
+direction:rag執行方向(forwoard，reverse，both)
+root_uid:用來唯一識別一個完整的文件或資料集合({side}-{orig_sid}) side可為input或reference
+model:g: 使用模型名稱
+rag_k: 在前k筆中的資料搜索
+cof_threshold:取用這結果的信心度閥值
+prediction:預測結果","
+// Case 1: 任務不存在
+HTTP 404 Bad Request
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""任務不存在"",
+      ""message_eng"": ""Job not found""
+    }
+  }
+}
+
+//Case 2: 任務已過期
+HTTP 410 Gone
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""任務已過期"",
+      ""message_eng"": ""Job has expired""
+    }
+  }
+}
+
+//Case 3 : 任務獲取狀態超時
+HTTP 504 Gateway Timeout
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""獲取任務狀態超時"",
+      ""message_eng"": ""Timeout while getting job status""
+    }
+  }
+}
+// Case 4: 系統錯誤
+HTTP 500 其他錯誤
+{
+  ""success"": false,
+  ""error"": {
+    ""detail"": {
+      ""message"": ""系統發生問題，請連絡系統管理員"",
+      ""message_eng"": ""System problem, please contact administrator""
+    }
+  }
+}",yes,
