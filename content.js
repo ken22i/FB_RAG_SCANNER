@@ -338,15 +338,80 @@ function highlightEvidenceInOriginalPost(predictions) {
         const refText = prediction.ref_text; // 獲取參考文本
         console.log('要高亮的證據:', evidences);
         
-        // 遍歷所有可能的貼文元素
-        postElements.forEach(postElement => {
-            const postText = postElement.textContent;
-            console.log('當前貼文內容:', postText);
-            
-            // 遍歷所有證據
-            evidences.forEach(evidence => {
-                if (postText.includes(evidence)) {
-                    console.log('找到匹配的文本:', evidence);
+        // 將所有postElements的文本合併，保留換行符
+        let combinedText = '';
+        const elementTexts = [];
+        postElements.forEach(element => {
+            const text = element.textContent;
+            elementTexts.push({
+                element: element,
+                text: text,
+                startIndex: combinedText.length,
+                endIndex: combinedText.length + text.length,
+                originalHTML: element.innerHTML
+            });
+            combinedText += text + '\n'; // 添加換行符
+        });
+
+        // 遍歷所有證據
+        evidences.forEach(evidence => {
+            // 標準化證據文本：將換行符和空格統一處理
+            const normalizedEvidence = evidence
+                .replace(/\r\n/g, '\n')  // 統一換行符
+                .replace(/\n\s*/g, '\n') // 移除換行符後的空格
+                .replace(/\s*\n/g, '\n') // 移除換行符前的空格
+                .replace(/\s+/g, ' ')    // 將多個空格替換為單個空格
+                .trim();                 // 移除首尾空格
+
+            // 標準化合併文本：保持相同的處理方式
+            const normalizedCombinedText = combinedText
+                .replace(/\r\n/g, '\n')  // 統一換行符
+                .replace(/\n\s*/g, '\n') // 移除換行符後的空格
+                .replace(/\s*\n/g, '\n') // 移除換行符前的空格
+                .replace(/\s+/g, ' ')    // 將多個空格替換為單個空格
+                .trim();                 // 移除首尾空格
+
+            console.log('標準化後的證據:', normalizedEvidence);
+            console.log('標準化後的合併文本:', normalizedCombinedText);
+
+            // 嘗試不同的匹配方式
+            let evidenceStart = normalizedCombinedText.indexOf(normalizedEvidence);
+            if (evidenceStart === -1) {
+                // 如果直接匹配失敗，嘗試將證據中的換行符替換為空格
+                const alternativeEvidence = normalizedEvidence.replace(/\n/g, ' ');
+                evidenceStart = normalizedCombinedText.indexOf(alternativeEvidence);
+                if (evidenceStart !== -1) {
+                    console.log('使用替代匹配方式找到文本');
+                }
+            }
+
+            if (evidenceStart !== -1) {
+                console.log('找到匹配的文本:', normalizedEvidence);
+                const evidenceEnd = evidenceStart + normalizedEvidence.length;
+
+                // 找出證據跨越的元素
+                const affectedElements = elementTexts.filter(item => 
+                    (evidenceStart >= item.startIndex && evidenceStart < item.endIndex) || // 證據開始於此元素
+                    (evidenceEnd > item.startIndex && evidenceEnd <= item.endIndex) || // 證據結束於此元素
+                    (evidenceStart <= item.startIndex && evidenceEnd >= item.endIndex) // 證據完全覆蓋此元素
+                );
+
+                console.log('受影響的元素數量:', affectedElements.length);
+
+                // 在每個受影響的元素中進行高亮
+                affectedElements.forEach(item => {
+                    const elementStart = item.startIndex;
+                    const elementEnd = item.endIndex;
+                    const element = item.element;
+
+                    // 計算在此元素中的證據範圍
+                    const localStart = Math.max(0, evidenceStart - elementStart);
+                    const localEnd = Math.min(element.textContent.length, evidenceEnd - elementStart);
+
+                    // 獲取要高亮的文本
+                    const textToHighlight = element.textContent.substring(localStart, localEnd);
+                    console.log('要高亮的文本:', textToHighlight);
+
                     // 創建容器元素
                     const container = document.createElement('span');
                     container.style.cssText = `
@@ -356,7 +421,7 @@ function highlightEvidenceInOriginalPost(predictions) {
 
                     // 創建高亮元素
                     const highlightSpan = document.createElement('span');
-                    highlightSpan.textContent = evidence;
+                    highlightSpan.textContent = textToHighlight;
                     highlightSpan.className = 'fb-highlight-text';
                     highlightSpan.style.cssText = `
                         background-color: rgba(255, 255, 0, 0.3);
@@ -392,16 +457,45 @@ function highlightEvidenceInOriginalPost(predictions) {
                     container.appendChild(highlightSpan);
                     container.appendChild(tooltip);
 
-                    // 替換原始文本中的證據
-                    const newHTML = postElement.innerHTML.replace(
-                        new RegExp(evidence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
-                        container.outerHTML
-                    );
-                    postElement.innerHTML = newHTML;
-                }
-            });
+                    // 替換原始文本中的證據部分
+                    const escapedText = textToHighlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(escapedText, 'g');
+                    const newHTML = element.innerHTML.replace(regex, container.outerHTML);
+                    
+                    // 檢查替換是否成功
+                    if (newHTML !== element.innerHTML) {
+                        console.log('成功替換文本');
+                        element.innerHTML = newHTML;
+                    } else {
+                        console.log('替換失敗，嘗試使用原始文本');
+                        // 如果替換失敗，嘗試使用原始文本
+                        const originalText = element.textContent;
+                        const originalRegex = new RegExp(originalText.substring(localStart, localEnd).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                        const fallbackHTML = element.innerHTML.replace(originalRegex, container.outerHTML);
+                        if (fallbackHTML !== element.innerHTML) {
+                            console.log('使用原始文本替換成功');
+                            element.innerHTML = fallbackHTML;
+                        } else {
+                            console.log('所有替換嘗試都失敗');
+                        }
+                    }
+                });
+            } else {
+                console.log('未找到匹配的文本:', normalizedEvidence);
+            }
         });
     });
+
+    // 在分析完成後點擊關閉按鈕
+    setTimeout(() => {
+        const closeButton = document.querySelector('div[aria-label="關閉"]');
+        if (closeButton) {
+            console.log('找到關閉按鈕，準備點擊');
+            closeButton.click();
+        } else {
+            console.log('未找到關閉按鈕');
+        }
+    }, 1000); // 延遲1秒後點擊，確保分析完成
 }
 
 function updateDisplay(content, isRAGResult = false) {
