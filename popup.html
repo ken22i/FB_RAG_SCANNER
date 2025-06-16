@@ -1,34 +1,139 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Facebook單篇貼文分析</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        padding: 10px;
-        width: 200px;
-        text-align: center;
-      }
-      button {
-        background-color: #1877f2;
-        color: white;
-        border: none;
-        padding: 10px;
-        cursor: pointer;
-        width: 100%;
-        border-radius: 5px;
-        margin-bottom: 10px;
-      }
-      button:hover {
-        background-color: #145dbf;
-      }
-    </style>
-  </head>
-  <body>
-    <h3>Facebook貼文分析</h3>
-    <button id="extract">添加分析按鈕</button>
-    <script src="popup.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facebook 單篇貼文分析</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      width: 320px;
+      text-align: center;
+      background-color: #fff;
+      color: #333;
+    }
+
+    h2 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+
+    p.description {
+      font-size: 15px;
+      margin-bottom: 16px;
+      color: #555;
+    }
+
+    .instructions {
+      background-color: #f2f3f5;
+      padding: 16px;
+      border-radius: 10px;
+      text-align: left;
+      font-size: 14.5px;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .instructions ol {
+      padding-left: 18px;
+      margin: 0;
+    }
+
+    .instructions li {
+      margin-bottom: 10px;
+    }
+
+    .instructions ul {
+      padding-left: 18px;
+      margin-top: 5px;
+    }
+
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    button {
+      padding: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    button span {
+      margin-left: 6px;
+    }
+
+    #analyze {
+      background-color: #1877f2;
+      color: white;
+    }
+
+    #analyze:hover {
+      background-color: #145dbf;
+    }
+
+    #viewResults {
+      background-color: #42b72a;
+      color: white;
+    }
+
+    #viewResults:hover {
+      background-color: #36a420;
+    }
+
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 5px;
+      display: none;
+      font-size: 14px;
+    }
+
+    .status.success {
+      background-color: #e7f3ff;
+      color: #1877f2;
+      display: block;
+    }
+
+    .status.error {
+      background-color: #ffebee;
+      color: #d32f2f;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h2>🔍 Facebook 貼文分析工具</h2>
+  <p class="description">只需 3 步驟，快速分析貼文留言內容！</p>
+
+  <div class="instructions">
+    <ol>
+      <li><strong>打開貼文留言：</strong>點擊 Facebook 貼文下的「留言」按鈕，讓你想分析的內容顯示在畫面上。</li>
+      <li><strong>開始分析：</strong>當貼文出現在畫面前景後，點擊「分析貼文」按鈕。</li>
+      <li><strong>查看結果：</strong>按下「檢視結果」查看上一次分析結果。
+        <ul>
+          <li>若目前仍為上次分析的貼文，系統會<strong>重新高亮證據</strong>。</li>
+        </ul>
+      </li>
+    </ol>
+  </div>
+
+  <div class="button-group">
+    <button id="analyze">🚀<span>分析貼文</span></button>
+    <button id="viewResults">📊<span>檢視結果</span></button>
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <script src="popup.js"></script>
+</body>
 </html>

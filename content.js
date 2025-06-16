@@ -1,3 +1,7 @@
+// 添加全局變量來存儲分析結果和原始貼文內容
+let lastAnalysisResult = null;
+let lastPostContent = null;
+
 function isStillInSamePost() {
     // 檢核相片是否為同一篇貼文
     const keyword = '這張相片來自一則貼文';
@@ -203,66 +207,71 @@ function createDisplayArea() {
     // 檢查是否已存在顯示區域
     let displayArea = document.getElementById('fb-analyzer-display');
     if (displayArea) {
-        displayArea.remove(); // 如果存在，先移除舊的
+        // 如果存在，先清空內容
+        const contentArea = document.getElementById('fb-analyzer-content');
+        if (contentArea) {
+            contentArea.innerHTML = '';
+        }
+    } else {
+        // 創建新的顯示區域
+        displayArea = document.createElement('div');
+        displayArea.id = 'fb-analyzer-display';
+        displayArea.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 400px;
+            max-height: 80vh;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 9999;
+            overflow-y: auto;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        `;
+
+        // 添加標題
+        const title = document.createElement('h3');
+        title.textContent = 'Facebook 貼文分析結果';
+        title.style.cssText = `
+            margin: 0 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            color: #1877f2;
+        `;
+        displayArea.appendChild(title);
+
+        // 添加關閉按鈕
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '×';
+        closeButton.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            border: none;
+            background: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #666;
+        `;
+        closeButton.onclick = () => displayArea.remove();
+        displayArea.appendChild(closeButton);
+
+        // 添加內容區域
+        const contentArea = document.createElement('div');
+        contentArea.id = 'fb-analyzer-content';
+        displayArea.appendChild(contentArea);
+
+        document.body.appendChild(displayArea);
     }
-
-    // 創建新的顯示區域
-    displayArea = document.createElement('div');
-    displayArea.id = 'fb-analyzer-display';
-    displayArea.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        width: 400px;
-        max-height: 80vh;
-        background: white;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        padding: 15px;
-        z-index: 9999;
-        overflow-y: auto;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    `;
-
-    // 添加標題
-    const title = document.createElement('h3');
-    title.textContent = 'Facebook 貼文分析結果';
-    title.style.cssText = `
-        margin: 0 0 15px 0;
-        padding-bottom: 10px;
-        border-bottom: 1px solid #eee;
-        color: #1877f2;
-    `;
-    displayArea.appendChild(title);
-
-    // 添加關閉按鈕
-    const closeButton = document.createElement('button');
-    closeButton.textContent = '×';
-    closeButton.style.cssText = `
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        border: none;
-        background: none;
-        font-size: 20px;
-        cursor: pointer;
-        color: #666;
-    `;
-    closeButton.onclick = () => displayArea.remove();
-    displayArea.appendChild(closeButton);
-
-    // 添加內容區域
-    const contentArea = document.createElement('div');
-    contentArea.id = 'fb-analyzer-content';
-    displayArea.appendChild(contentArea);
-
-    document.body.appendChild(displayArea);
-    return contentArea;
+    return document.getElementById('fb-analyzer-content'); // 確保返回的是內容區域
 }
 
 function highlightEvidenceInOriginalPost(predictions) {
-    // 找到原始貼文元素
-    const postElements = document.querySelectorAll('div[data-ad-rendering-role="story_message"] div[dir="auto"]');
+    // 使用與 extractPostAndComments 相同的貼文選擇器
+    const postElements = document.querySelectorAll('.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x78zum5.xdt5ytf.x1iyjqo2.x1n2onr6.xqbnct6.xga75y6 .html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl .x78zum5.xdt5ytf.xz62fqu.x16ldp7u .xu06os2.x1ok221b span div[dir=auto]');
+    
     if (!postElements.length) {
         console.log('找不到原始貼文元素');
         return;
@@ -451,7 +460,7 @@ function highlightEvidenceInOriginalPost(predictions) {
                         white-space: normal;
                         word-wrap: break-word;
                     `;
-                    tooltip.textContent = `詐騙手法: ${refText}`;
+                    tooltip.textContent = `詐騙類型: ${refText}`;
 
                     // 將高亮元素和提示框添加到容器中
                     container.appendChild(highlightSpan);
@@ -485,17 +494,6 @@ function highlightEvidenceInOriginalPost(predictions) {
             }
         });
     });
-
-    // 在分析完成後點擊關閉按鈕
-    setTimeout(() => {
-        const closeButton = document.querySelector('div[aria-label="關閉"]');
-        if (closeButton) {
-            console.log('找到關閉按鈕，準備點擊');
-            closeButton.click();
-        } else {
-            console.log('未找到關閉按鈕');
-        }
-    }, 1000); // 延遲1秒後點擊，確保分析完成
 }
 
 function updateDisplay(content, isRAGResult = false) {
@@ -505,17 +503,83 @@ function updateDisplay(content, isRAGResult = false) {
     const section = document.createElement('div');
     section.style.cssText = `
         margin-bottom: 20px;
-        padding: 10px;
+        padding: 15px;
         background: #f8f9fa;
-        border-radius: 4px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     `;
 
     const title = document.createElement('h4');
-    title.textContent = isRAGResult ? 'RAG 分析結果' : '貼文內容';
+    title.textContent = isRAGResult ? '詐騙分析結果' : '貼文內容';
     title.style.cssText = `
-        margin: 0 0 10px 0;
+        margin: 0 0 15px 0;
         color: #1877f2;
+        font-size: 18px;
+        font-weight: bold;
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     `;
+
+    if (isRAGResult) {
+        // 添加複製按鈕
+        const copyButton = document.createElement('button');
+        copyButton.textContent = '複製分析結果';
+        copyButton.style.cssText = `
+            background-color: #1877f2;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        `;
+        copyButton.onmouseover = () => {
+            copyButton.style.backgroundColor = '#166fe5';
+        };
+        copyButton.onmouseout = () => {
+            copyButton.style.backgroundColor = '#1877f2';
+        };
+        copyButton.onclick = () => {
+            // 格式化分析結果
+            const predictions = content.data.results[0].predictions;
+            let formattedText = '【詐騙分析結果】\n\n';
+            
+            predictions.forEach((prediction, index) => {
+                formattedText += `詐騙類型：${prediction.ref_text}\n`;
+                formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
+                formattedText += '發現的證據：\n';
+                prediction.evidences.forEach((evidence, i) => {
+                    formattedText += `${i + 1}. ${evidence}\n`;
+                });
+                formattedText += '\n';
+            });
+
+            // 複製到剪貼簿
+            navigator.clipboard.writeText(formattedText).then(() => {
+                // 顯示複製成功提示
+                const originalText = copyButton.textContent;
+                copyButton.textContent = '已複製！';//暫時顯示已複製
+                copyButton.style.backgroundColor = '#28a745';
+                setTimeout(() => {
+                    copyButton.textContent = originalText;
+                    copyButton.style.backgroundColor = '#1877f2';
+                }, 2000);
+            }).catch(err => {
+                console.error('複製失敗:', err);
+                copyButton.textContent = '複製失敗';
+                copyButton.style.backgroundColor = '#dc3545';
+                setTimeout(() => {
+                    copyButton.textContent = '複製分析結果';
+                    copyButton.style.backgroundColor = '#1877f2';
+                }, 2000);
+            });
+        };
+        title.appendChild(copyButton);
+    }
     section.appendChild(title);
 
     const contentDiv = document.createElement('div');
@@ -523,21 +587,148 @@ function updateDisplay(content, isRAGResult = false) {
         white-space: pre-wrap;
         word-wrap: break-word;
         font-size: 14px;
-        line-height: 1.5;
+        line-height: 1.6;
     `;
     
     if (isRAGResult) {
-        // 顯示完整的 JSON
-        contentDiv.textContent = JSON.stringify(content, null, 2);
+        // 解析分析結果
+        const predictions = content.data.results[0].predictions;
+        
+        // 創建分析結果容器
+        const analysisContainer = document.createElement('div');
+        analysisContainer.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        `;
+
+        // 處理每個預測結果
+        predictions.forEach((prediction, index) => {
+            const predictionCard = document.createElement('div');
+            predictionCard.style.cssText = `
+                background: white;
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            `;
+
+            // 詐騙類型標題
+            const scamTypeContainer = document.createElement('div');
+            scamTypeContainer.style.cssText = `
+                display: flex;
+                align-items: flex-start; /* 將元素對齊到頂部 */
+                gap: 10px;
+                margin-bottom: 10px;
+            `;
+
+            const iconTextGroup = document.createElement('div');
+            iconTextGroup.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                color: #dc3545;
+            `;
+
+            const warningIcon = document.createElement('span');
+            warningIcon.textContent = '⚠'; // 使用 unicode 警告符號
+            warningIcon.style.cssText = `
+                font-size: 28px; /* 較大的圖標 */
+                line-height: 1;
+            `;
+            iconTextGroup.appendChild(warningIcon);
+
+            // const scamLabel = document.createElement('div');
+            // scamLabel.textContent = '騙';
+            // scamLabel.style.cssText = `
+            //     font-size: 12px; /* "騙"字的字體較小 */
+            //     font-weight: bold;
+            // `;
+            // iconTextGroup.appendChild(scamLabel);
+            scamTypeContainer.appendChild(iconTextGroup);
+
+            const scamTypeText = document.createElement('div');
+            scamTypeText.style.cssText = `
+                font-size: 18px; /* 詐騙類型文字字體較大 */
+                font-weight: bold;
+                color: #dc3545;
+            `;
+            scamTypeText.textContent = `詐騙類型：${prediction.ref_text}`;
+            scamTypeContainer.appendChild(scamTypeText);
+
+            predictionCard.appendChild(scamTypeContainer);
+
+            // 可信度指示器
+            const confidenceBar = document.createElement('div');
+            confidenceBar.style.cssText = `
+                margin: 10px 0;
+                background: #e9ecef;
+                border-radius: 4px;
+                height: 8px;
+                overflow: hidden;
+            `;
+            const confidenceFill = document.createElement('div');
+            confidenceFill.style.cssText = `
+                height: 100%;
+                background: ${prediction.confidence > 0.8 ? '#28a745' : '#ffc107'};
+                width: ${prediction.confidence * 100}%;
+                transition: width 0.3s ease;
+            `;
+            confidenceBar.appendChild(confidenceFill);
+            predictionCard.appendChild(confidenceBar);
+
+            // 可信度文字
+            const confidenceText = document.createElement('div');
+            confidenceText.style.cssText = `
+                font-size: 12px;
+                color: #6c757d;
+                margin-bottom: 10px;
+            `;
+            confidenceText.textContent = `經LLM分析可信度：${(prediction.confidence * 100).toFixed(1)}%`;
+            predictionCard.appendChild(confidenceText);
+
+            // 證據列表
+            const evidenceTitle = document.createElement('div');
+            evidenceTitle.style.cssText = `
+                font-size: 14px;
+                font-weight: bold;
+                color: #495057;
+                margin: 10px 0 5px 0;
+            `;
+            evidenceTitle.textContent = '發現的證據：';
+            predictionCard.appendChild(evidenceTitle);
+
+            const evidenceList = document.createElement('ul');
+            evidenceList.style.cssText = `
+                margin: 0;
+                padding-left: 20px;
+                color: #495057;
+            `;
+            prediction.evidences.forEach(evidence => {
+                const evidenceItem = document.createElement('li');
+                evidenceItem.textContent = evidence;
+                evidenceList.appendChild(evidenceItem);
+            });
+            predictionCard.appendChild(evidenceList);
+
+            analysisContainer.appendChild(predictionCard);
+        });
+
+        contentDiv.appendChild(analysisContainer);
         section.appendChild(contentDiv);
 
         // 在原始貼文中高亮顯示證據
-        const predictions = content.data.results[0].predictions;
-        console.log('開始處理預測結果:', predictions);
         highlightEvidenceInOriginalPost(predictions);
+
+        // 保存分析結果
+        lastAnalysisResult = {
+            content: content,
+            predictions: predictions
+        };
     } else {
         contentDiv.textContent = content;
         section.appendChild(contentDiv);
+        // 保存原始貼文內容
+        lastPostContent = content;
     }
     
     contentArea.appendChild(section);
@@ -633,6 +824,10 @@ function extractPostAndComments(downloadPath) {
     (async () => {
         try {
             console.log('🚀 開始創建 RAG 任務');
+            // 顯示載入提示
+            const contentArea = createDisplayArea();
+            contentArea.innerHTML = '<div style="padding: 10px; background-color: #e7f3ff; color: #1877f2; border-radius: 4px; margin-bottom: 10px;">分析中，請稍候...</div>';
+
             // 創建RAG任務
             const jobId = await createRAGTask(post);
             console.log('📝 已創建 RAG 任務，job_id:', jobId);
@@ -641,16 +836,20 @@ function extractPostAndComments(downloadPath) {
             const result = await waitForRAGCompletion(jobId);
             console.log('✨ RAG 任務處理完成並獲取結果');
 
-            // 顯示 RAG 分析結果
+            // 清除載入提示，並顯示 RAG 分析結果
+            contentArea.innerHTML = ''; // 清空載入提示
+            updateDisplay(lastPostContent, false); // 重新顯示原始貼文
             updateDisplay(result, true);
         } catch (error) {
             console.error('❌ RAG 處理過程發生錯誤:', error);
             // 顯示錯誤信息
             const contentArea = document.getElementById('fb-analyzer-content');
             if (contentArea) {
+                contentArea.innerHTML = ''; // 清空載入提示
                 const errorDiv = document.createElement('div');
                 errorDiv.style.cssText = `
-                    background-color: #ffd700;
+                    background-color: #ffebee;
+                    color: #d32f2f;
                     padding: 10px;
                     border-radius: 4px;
                     margin-bottom: 20px;
@@ -760,167 +959,6 @@ function extractImages(downloadPath) {
     }
 }
 
-function addAnalysisButtonsToPosts() {
-    // 找到所有貼文容器
-    const postContainers = document.querySelectorAll('div[data-ad-rendering-role="story_message"]');
-    
-    postContainers.forEach(container => {
-        // 檢查是否已經添加過按鈕
-        if (container.querySelector('.fb-analyzer-buttons')) {
-            return;
-        }
-
-        // 創建按鈕容器
-        const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'fb-analyzer-buttons';
-        buttonContainer.style.cssText = `
-            display: flex;
-            gap: 10px;
-            margin: 10px 0;
-            padding: 5px;
-        `;
-
-        // 創建分析貼文按鈕
-        const analyzeButton = document.createElement('button');
-        analyzeButton.textContent = '分析貼文';
-        analyzeButton.style.cssText = `
-            background-color: #1877f2;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        `;
-        analyzeButton.onclick = async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // 點擊"查看更多"按鈕
-            const moreButtons = container.querySelectorAll('div[role="button"]');
-            let foundMoreButton = false;
-            for (const button of moreButtons) {
-                if (button.textContent.includes('查看更多')) {
-                    console.log('找到"查看更多"按鈕，準備點擊');
-                    button.click();
-                    foundMoreButton = true;
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                    break;
-                }
-            }
-
-            if (!foundMoreButton) {
-                console.log('未找到"查看更多"按鈕');
-            }
-
-            // 先點擊留言按鈕
-            console.log('尋找留言按鈕...');
-            const commentButton = container.querySelector('div[aria-label="留言"][role="button"]');
-            if (commentButton) {
-                console.log('找到留言按鈕，準備點擊');
-                commentButton.click();
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            } else {
-                console.log('未找到留言按鈕');
-            }
-
-            // 等待並嘗試找到展開按鈕
-            console.log('開始尋找展開按鈕...');
-            let expandButton = null;
-            let attempts = 0;
-            const maxAttempts = 5;
-
-            while (!expandButton && attempts < maxAttempts) {
-                attempts++;
-                console.log(`嘗試第 ${attempts} 次尋找展開按鈕...`);
-
-                // 在整個容器中尋找展開按鈕
-                const allButtons = container.querySelectorAll('div[role="none"][data-visualcompletion="ignore"]');
-                for (const button of allButtons) {
-                    const style = window.getComputedStyle(button);
-                    if (style.borderRadius === '4px' && button.offsetHeight > 0) {
-                        console.log('找到可能的展開按鈕:', button);
-                        expandButton = button;
-                        break;
-                    }
-                }
-
-                if (!expandButton) {
-                    console.log('未找到按鈕，等待後重試...');
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            }
-
-            if (expandButton) {
-                console.log('找到展開按鈕，準備點擊');
-                try {
-                    // 嘗試多種點擊方式
-                    expandButton.click();
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // 如果第一次點擊不成功，嘗試使用 MouseEvent
-                    const clickEvent = new MouseEvent('click', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    expandButton.dispatchEvent(clickEvent);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    // 如果還是不成功，嘗試使用 mousedown 和 mouseup 事件
-                    expandButton.dispatchEvent(new MouseEvent('mousedown', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true
-                    }));
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    expandButton.dispatchEvent(new MouseEvent('mouseup', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true
-                    }));
-                } catch (error) {
-                    console.error('點擊按鈕時發生錯誤:', error);
-                }
-            } else {
-                console.log('在多次嘗試後仍未找到展開按鈕');
-            }
-
-            // 執行分析
-            const downloadPath = generateDownloadPath();
-            extractPostAndComments(downloadPath);
-        };
-
-        // 創建檢視結果按鈕
-        const viewResultsButton = document.createElement('button');
-        viewResultsButton.textContent = '檢視結果';
-        viewResultsButton.style.cssText = `
-            background-color: #42b72a;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        `;
-        viewResultsButton.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            createDisplayArea();
-        };
-
-        // 添加按鈕到容器
-        buttonContainer.appendChild(analyzeButton);
-        buttonContainer.appendChild(viewResultsButton);
-
-        // 將按鈕容器添加到貼文容器中
-        const postContent = container.querySelector('div[dir="auto"]');
-        if (postContent) {
-            postContent.parentNode.insertBefore(buttonContainer, postContent.nextSibling);
-        }
-    });
-}
-
 function generateDownloadPath() {
     // 取得發文者名稱
     let span = document.querySelector('span.x6zurak.x18bv5gf.x184q3qc.xqxll94.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x2b8uid.x1lliihq.xzsf02u.xlh3980.xvmahel.x1x9mg3.x1xlr1w8');
@@ -951,26 +989,36 @@ function generateDownloadPath() {
 // 監聽來自 popup.js 的指令
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'extract') {
-        // 添加分析按鈕到所有貼文
-        addAnalysisButtonsToPosts();
+        // 直接執行分析功能
+        const downloadPath = generateDownloadPath();
+        extractPostAndComments(downloadPath);
+        sendResponse({ status: 'success' });
+    } else if (message.action === 'view_results') {
+        // 顯示分析結果
+        createDisplayArea();
+        if (lastPostContent && lastAnalysisResult) {
+            // 先顯示原始貼文內容
+            updateDisplay(lastPostContent, false);
+            // 再顯示分析結果
+            updateDisplay(lastAnalysisResult.content, true);
+            // 重新高亮顯示證據
+            highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
+        } else {
+            // 如果沒有分析結果，顯示提示信息
+            const contentArea = document.getElementById('fb-analyzer-content');
+            if (contentArea) {
+                const messageDiv = document.createElement('div');
+                messageDiv.style.cssText = `
+                    padding: 10px;
+                    background-color: #fff3cd;
+                    color: #856404;
+                    border-radius: 4px;
+                    margin-bottom: 10px;
+                `;
+                messageDiv.textContent = '尚未進行分析，請先點擊「分析貼文」按鈕';
+                contentArea.appendChild(messageDiv);
+            }
+        }
         sendResponse({ status: 'success' });
     }
 });
-
-// 監聽頁面變化，動態添加按鈕
-const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-        if (mutation.addedNodes.length) {
-            addAnalysisButtonsToPosts();
-        }
-    });
-});
-
-// 開始觀察頁面變化
-observer.observe(document.body, {
-    childList: true,
-    subtree: true
-});
-
-// 初始添加按鈕
-addAnalysisButtonsToPosts();
