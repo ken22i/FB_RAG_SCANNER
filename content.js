@@ -451,7 +451,7 @@ function highlightEvidenceInOriginalPost(predictions) {
                         white-space: normal;
                         word-wrap: break-word;
                     `;
-                    tooltip.textContent = `參考文本: ${refText}`;
+                    tooltip.textContent = `詐騙手法: ${refText}`;
 
                     // 將高亮元素和提示框添加到容器中
                     container.appendChild(highlightSpan);
@@ -760,48 +760,217 @@ function extractImages(downloadPath) {
     }
 }
 
+function addAnalysisButtonsToPosts() {
+    // 找到所有貼文容器
+    const postContainers = document.querySelectorAll('div[data-ad-rendering-role="story_message"]');
+    
+    postContainers.forEach(container => {
+        // 檢查是否已經添加過按鈕
+        if (container.querySelector('.fb-analyzer-buttons')) {
+            return;
+        }
+
+        // 創建按鈕容器
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'fb-analyzer-buttons';
+        buttonContainer.style.cssText = `
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 5px;
+        `;
+
+        // 創建分析貼文按鈕
+        const analyzeButton = document.createElement('button');
+        analyzeButton.textContent = '分析貼文';
+        analyzeButton.style.cssText = `
+            background-color: #1877f2;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        analyzeButton.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // 點擊"查看更多"按鈕
+            const moreButtons = container.querySelectorAll('div[role="button"]');
+            let foundMoreButton = false;
+            for (const button of moreButtons) {
+                if (button.textContent.includes('查看更多')) {
+                    console.log('找到"查看更多"按鈕，準備點擊');
+                    button.click();
+                    foundMoreButton = true;
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    break;
+                }
+            }
+
+            if (!foundMoreButton) {
+                console.log('未找到"查看更多"按鈕');
+            }
+
+            // 先點擊留言按鈕
+            console.log('尋找留言按鈕...');
+            const commentButton = container.querySelector('div[aria-label="留言"][role="button"]');
+            if (commentButton) {
+                console.log('找到留言按鈕，準備點擊');
+                commentButton.click();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            } else {
+                console.log('未找到留言按鈕');
+            }
+
+            // 等待並嘗試找到展開按鈕
+            console.log('開始尋找展開按鈕...');
+            let expandButton = null;
+            let attempts = 0;
+            const maxAttempts = 5;
+
+            while (!expandButton && attempts < maxAttempts) {
+                attempts++;
+                console.log(`嘗試第 ${attempts} 次尋找展開按鈕...`);
+
+                // 在整個容器中尋找展開按鈕
+                const allButtons = container.querySelectorAll('div[role="none"][data-visualcompletion="ignore"]');
+                for (const button of allButtons) {
+                    const style = window.getComputedStyle(button);
+                    if (style.borderRadius === '4px' && button.offsetHeight > 0) {
+                        console.log('找到可能的展開按鈕:', button);
+                        expandButton = button;
+                        break;
+                    }
+                }
+
+                if (!expandButton) {
+                    console.log('未找到按鈕，等待後重試...');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+
+            if (expandButton) {
+                console.log('找到展開按鈕，準備點擊');
+                try {
+                    // 嘗試多種點擊方式
+                    expandButton.click();
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // 如果第一次點擊不成功，嘗試使用 MouseEvent
+                    const clickEvent = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    expandButton.dispatchEvent(clickEvent);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // 如果還是不成功，嘗試使用 mousedown 和 mouseup 事件
+                    expandButton.dispatchEvent(new MouseEvent('mousedown', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    }));
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    expandButton.dispatchEvent(new MouseEvent('mouseup', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    }));
+                } catch (error) {
+                    console.error('點擊按鈕時發生錯誤:', error);
+                }
+            } else {
+                console.log('在多次嘗試後仍未找到展開按鈕');
+            }
+
+            // 執行分析
+            const downloadPath = generateDownloadPath();
+            extractPostAndComments(downloadPath);
+        };
+
+        // 創建檢視結果按鈕
+        const viewResultsButton = document.createElement('button');
+        viewResultsButton.textContent = '檢視結果';
+        viewResultsButton.style.cssText = `
+            background-color: #42b72a;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        viewResultsButton.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            createDisplayArea();
+        };
+
+        // 添加按鈕到容器
+        buttonContainer.appendChild(analyzeButton);
+        buttonContainer.appendChild(viewResultsButton);
+
+        // 將按鈕容器添加到貼文容器中
+        const postContent = container.querySelector('div[dir="auto"]');
+        if (postContent) {
+            postContent.parentNode.insertBefore(buttonContainer, postContent.nextSibling);
+        }
+    });
+}
+
+function generateDownloadPath() {
+    // 取得發文者名稱
+    let span = document.querySelector('span.x6zurak.x18bv5gf.x184q3qc.xqxll94.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x2b8uid.x1lliihq.xzsf02u.xlh3980.xvmahel.x1x9mg3.x1xlr1w8');
+    let rawText = span?.textContent;
+    if (!rawText || rawText.trim() === '') {
+        span = document.querySelector('span.x6zurak.x18bv5gf.x184q3qc.xqxll94.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x2b8uid.x1lliihq.xzsf02u.xlh3980.xvmahel.x1x9mg3.x1xlr1w8');
+        rawText = span?.textContent;
+    }
+    if (!rawText || rawText.trim() === '') {
+        span = document.querySelector('span.x6zurak.x18bv5gf.x184q3qc.xqxll94.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x2b8uid.x1lliihq.xzsf02u.xlh3980.xvmahel.x1x9mg3.x1xlr1w8');
+        rawText = span?.textContent;
+    }
+    
+    const posterName = rawText ? rawText.replace('的貼文', '') : 'unknown';
+    
+    // 組合下載路徑
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const hour = date.getHours();
+    const minute = date.getMinutes();
+    const second = date.getSeconds();
+    
+    return posterName + `_${year}${month.toString().padStart(2, '0')}${day.toString().padStart(2, '0')}${hour.toString().padStart(2, '0')}${minute.toString().padStart(2, '0')}${second.toString().padStart(2, '0')}`;
+}
+
 // 監聽來自 popup.js 的指令
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'extract') {
-        // 取得發文者名稱
-        // Windows span
-        let span = document.querySelector('span.x6zurak.x18bv5gf.x184q3qc.xqxll94.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x2b8uid.x1lliihq.xzsf02u.xlh3980.xvmahel.x1x9mg3.x1xlr1w8');
-        let rawText = span?.textContent;
-        if (rawText && rawText.trim() !== '') {
-            // do nothing
-        } else {
-            // Linux span
-            span = document.querySelector('span.x6zurak.x18bv5gf.x184q3qc.xqxll94.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x2b8uid.x1lliihq.xzsf02u.xlh3980.xvmahel.x1x9mg3.x1xlr1w8');
-            rawText = span?.textContent;
-            if (rawText && rawText.trim() !== '') {
-                // do nothing
-            } else {
-                // Mac span
-                span = document.querySelector('span.x6zurak.x18bv5gf.x184q3qc.xqxll94.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x2b8uid.x1lliihq.xzsf02u.xlh3980.xvmahel.x1x9mg3.x1xlr1w8');
-                rawText = span?.textContent;
-                if (rawText && rawText.trim() !== '') {
-                    // do nothing
-                } else {
-                    alert('找不到發文者名稱！');
-                    sendResponse({ status: 'success' });
-                }
-            }
-        }
-        const posterName = rawText.replace('的貼文', '');
-        // 組合下載路徑
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
-        const day = date.getDate();
-        const hour = date.getHours();
-        const minute = date.getMinutes();
-        const second = date.getSeconds();
-        const downloadPath = posterName + `_${year}${month.toString().padStart(2, '0')}${day.toString().padStart(2, '0')}${hour.toString().padStart(2, '0')}${minute.toString().padStart(2, '0')}${second.toString().padStart(2, '0')}`;
-
-        // 下載貼文與留言
-        extractPostAndComments(downloadPath);
-        // 下載圖片
-        extractImages(downloadPath);
+        // 添加分析按鈕到所有貼文
+        addAnalysisButtonsToPosts();
         sendResponse({ status: 'success' });
     }
 });
+
+// 監聽頁面變化，動態添加按鈕
+const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+        if (mutation.addedNodes.length) {
+            addAnalysisButtonsToPosts();
+        }
+    });
+});
+
+// 開始觀察頁面變化
+observer.observe(document.body, {
+    childList: true,
+    subtree: true
+});
+
+// 初始添加按鈕
+addAnalysisButtonsToPosts();
