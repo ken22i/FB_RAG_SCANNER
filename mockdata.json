@@ -1,0 +1,77 @@
+{
+	"line_id_list": ["shihchen", "@522pqueg"],
+	"url_list": ["https://www.goetmalltop.com/#/", "https://www.ousdinh.com", "https://www.ywcnfztp.mom/#/", "", "https://www.google.com/", "", "", "", ""],
+  
+	"line_id_details": [
+	  {
+		"id": "shihchen",
+		"result": 1
+	  },
+	  {
+		"id": "@522pqueg",
+		"result": 1
+	  },
+	  {
+		"id": "ff876",
+		"result": 0
+	  }
+	],
+	"url_details": [
+	  {
+		"status": 1,
+		"url": "https://www.goetmalltop.com/#/",
+		"result": 0,
+		"source": "model",
+		"scam_probability": 0.9998853206634521,
+		"level": "HIGH"
+	  },
+	  {
+		"status": 1,
+		"url": "https://www.ousdinh.com",
+		"result": 0,
+		"source": "model",
+		"scam_probability": 0.9997958540916443,
+		"level": "HIGH"
+	  },
+	  {
+		"status": 1,
+		"url": "https://www.ywcnfztp.mom/#/",
+		"result": 0,
+		"source": "model",
+		"scam_probability": 0.9998853206634521,
+		"level": "MEDIUM"
+	  },
+	  {
+		"status": 1,
+		"url": "https://www.google.com/",
+		"result": 1,
+		"source": "model",
+		"scam_probability": 0.0006391406059265137,
+		"level": "LOW"
+	  },
+	  {
+		"status": 0,
+		"url": "",
+		"error_code": 0,
+		"error_msg": "Failed to parse url domain."
+	  },
+	  {
+		"status": 0,
+		"url": "",
+		"error_code": 1,
+		"error_msg": "Failed to call whois data: {str(e)}"
+	  },
+	  {
+		"status": 0,
+		"url": "",
+		"error_code": 2,
+		"error_msg": "Invalid whois data received (empty or unexpected format)."
+	  },
+	  {
+		"status": 0,
+		"url": "",
+		"error_code": 3,
+		"error_msg": "Whois data contains null values."
+	  }
+	]
+  }

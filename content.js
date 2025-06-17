@@ -496,7 +496,7 @@ function highlightEvidenceInOriginalPost(predictions) {
     });
 }
 
-function updateDisplay(content, isRAGResult = false) {
+function updateDisplay(content, isRAGResult = false, showAdditionalContent = true) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
 
@@ -579,6 +579,45 @@ function updateDisplay(content, isRAGResult = false) {
             });
         };
         title.appendChild(copyButton);
+
+        // Create Post Comment button
+        const postCommentButton = document.createElement('button');
+        postCommentButton.textContent = '自動留言分析結果';
+        postCommentButton.id = 'postCommentButton';
+        postCommentButton.style.cssText = `
+            background-color: #1877f2;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-left: 8px; 
+        `;
+        postCommentButton.onmouseover = () => {
+            postCommentButton.style.backgroundColor = '#166fe5';
+        };
+        postCommentButton.onmouseout = () => {
+            postCommentButton.style.backgroundColor = '#1877f2';
+        };
+        postCommentButton.addEventListener('click', () => {
+            if (lastAnalysisResult && lastAnalysisResult.predictions) {
+                const commentText = generateCommentText(lastAnalysisResult.predictions);
+                postAnalysisToFacebookComment(commentText);
+                // Optional: Change button text to "Posting..." or disable it
+                postCommentButton.textContent = '處理中...';
+                postCommentButton.disabled = true;
+                setTimeout(() => { // Reset button after a delay
+                    postCommentButton.textContent = '自動留言分析結果';
+                    postCommentButton.disabled = false;
+                }, 3000); // Reset after 3 seconds
+            } else {
+                console.error('No analysis result available to post.');
+                alert('沒有可用的分析結果來留言。請先執行分析。');
+            }
+        });
+        title.appendChild(postCommentButton);
     }
     section.appendChild(title);
 
@@ -724,6 +763,15 @@ function updateDisplay(content, isRAGResult = false) {
             content: content,
             predictions: predictions
         };
+
+        // 只有在需要顯示額外內容時才調用這些函數
+        if (showAdditionalContent) {
+            // 添加可疑LINE ID和可疑URL顯示區域
+            displaySuspiciousItems();
+            
+            // 添加綜合評分顯示
+            displayComprehensiveRiskAssessment(predictions);
+        }
     } else {
         contentDiv.textContent = content;
         section.appendChild(contentDiv);
@@ -732,6 +780,218 @@ function updateDisplay(content, isRAGResult = false) {
     }
     
     contentArea.appendChild(section);
+}
+
+// 新增函數：顯示可疑LINE ID和可疑URL
+function displaySuspiciousItems() {
+    const contentArea = document.getElementById('fb-analyzer-content');
+    if (!contentArea) return;
+
+    // 讀取mockdata.json
+    fetch(chrome.runtime.getURL('mockdata.json'))
+        .then(response => response.json())
+        .then(data => {
+            // 創建可疑項目顯示區域
+            const suspiciousSection = document.createElement('div');
+            suspiciousSection.style.cssText = `
+                margin-bottom: 20px;
+                padding: 15px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            `;
+
+            const suspiciousTitle = document.createElement('h4');
+            suspiciousTitle.textContent = '🔍 偵測到的可疑項目';
+            suspiciousTitle.style.cssText = `
+                margin: 0 0 15px 0;
+                color: #dc3545;
+                font-size: 18px;
+                font-weight: bold;
+                border-bottom: 2px solid #e9ecef;
+                padding-bottom: 10px;
+            `;
+            suspiciousSection.appendChild(suspiciousTitle);
+
+            // 處理可疑LINE ID
+            const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
+            if (suspiciousLineIds.length > 0) {
+                const lineIdContainer = document.createElement('div');
+                lineIdContainer.style.cssText = `
+                    margin-bottom: 15px;
+                `;
+
+                const lineIdTitle = document.createElement('div');
+                lineIdTitle.style.cssText = `
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #495057;
+                    margin-bottom: 10px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                `;
+                lineIdTitle.innerHTML = '📱 可疑LINE ID';
+                lineIdContainer.appendChild(lineIdTitle);
+
+                const lineIdList = document.createElement('div');
+                lineIdList.style.cssText = `
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                `;
+
+                suspiciousLineIds.forEach(item => {
+                    const lineIdCard = document.createElement('div');
+                    lineIdCard.style.cssText = `
+                        background: #fff3cd;
+                        border: 1px solid #ffeaa7;
+                        border-radius: 6px;
+                        padding: 8px 12px;
+                        font-size: 14px;
+                        font-weight: bold;
+                        color: #856404;
+                        display: flex;
+                        align-items: center;
+                        gap: 6px;
+                    `;
+                    lineIdCard.innerHTML = `⚠️ ${item.id}`;
+                    lineIdList.appendChild(lineIdCard);
+                });
+
+                lineIdContainer.appendChild(lineIdList);
+                suspiciousSection.appendChild(lineIdContainer);
+            }
+
+            // 處理可疑URL（HIGH和MEDIUM等級）
+            const suspiciousUrls = data.url_details.filter(item => 
+                item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
+            );
+            
+            if (suspiciousUrls.length > 0) {
+                const urlContainer = document.createElement('div');
+                urlContainer.style.cssText = `
+                    margin-bottom: 15px;
+                `;
+
+                const urlTitle = document.createElement('div');
+                urlTitle.style.cssText = `
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #495057;
+                    margin-bottom: 10px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                `;
+                urlTitle.innerHTML = '🌐 可疑URL';
+                urlContainer.appendChild(urlTitle);
+
+                const urlList = document.createElement('div');
+                urlList.style.cssText = `
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                `;
+
+                suspiciousUrls.forEach(item => {
+                    const urlCard = document.createElement('div');
+                    urlCard.style.cssText = `
+                        background: white;
+                        border-radius: 6px;
+                        padding: 12px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                        border-left: 4px solid ${item.level === 'HIGH' ? '#dc3545' : '#ffc107'};
+                    `;
+
+                    const urlHeader = document.createElement('div');
+                    urlHeader.style.cssText = `
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 8px;
+                    `;
+
+                    const urlText = document.createElement('div');
+                    urlText.style.cssText = `
+                        font-size: 14px;
+                        font-weight: bold;
+                        color: #495057;
+                        word-break: break-all;
+                    `;
+                    urlText.textContent = item.url;
+
+                    const levelBadge = document.createElement('span');
+                    levelBadge.style.cssText = `
+                        background: ${item.level === 'HIGH' ? '#dc3545' : '#ffc107'};
+                        color: white;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 12px;
+                        font-weight: bold;
+                    `;
+                    levelBadge.textContent = item.level;
+
+                    urlHeader.appendChild(urlText);
+                    urlHeader.appendChild(levelBadge);
+                    urlCard.appendChild(urlHeader);
+
+                    const urlDetails = document.createElement('div');
+                    urlDetails.style.cssText = `
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        font-size: 12px;
+                        color: #6c757d;
+                    `;
+
+                    const scamProbability = document.createElement('div');
+                    scamProbability.textContent = `詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%`;
+
+                    const source = document.createElement('div');
+                    source.textContent = `來源: ${item.source}`;
+
+                    urlDetails.appendChild(scamProbability);
+                    urlDetails.appendChild(source);
+                    urlCard.appendChild(urlDetails);
+
+                    urlList.appendChild(urlCard);
+                });
+
+                urlContainer.appendChild(urlList);
+                suspiciousSection.appendChild(urlContainer);
+            }
+
+            // 如果沒有可疑項目，顯示提示信息
+            if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
+                const noSuspiciousDiv = document.createElement('div');
+                noSuspiciousDiv.style.cssText = `
+                    text-align: center;
+                    padding: 20px;
+                    color: #6c757d;
+                    font-style: italic;
+                `;
+                noSuspiciousDiv.textContent = '未偵測到可疑的LINE ID或URL';
+                suspiciousSection.appendChild(noSuspiciousDiv);
+            }
+
+            contentArea.appendChild(suspiciousSection);
+        })
+        .catch(error => {
+            console.error('讀取mockdata.json失敗:', error);
+            // 顯示錯誤信息
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+                background-color: #ffebee;
+                color: #d32f2f;
+                padding: 10px;
+                border-radius: 4px;
+                margin-bottom: 20px;
+                font-size: 14px;
+            `;
+            errorDiv.textContent = '無法讀取可疑項目資料';
+            contentArea.appendChild(errorDiv);
+        });
 }
 
 function extractPostAndComments(downloadPath) {
@@ -839,7 +1099,7 @@ function extractPostAndComments(downloadPath) {
             // 清除載入提示，並顯示 RAG 分析結果
             contentArea.innerHTML = ''; // 清空載入提示
             updateDisplay(lastPostContent, false); // 重新顯示原始貼文
-            updateDisplay(result, true);
+            updateDisplay(result, true, true); // 顯示分析結果和額外內容
         } catch (error) {
             console.error('❌ RAG 處理過程發生錯誤:', error);
             // 顯示錯誤信息
@@ -986,6 +1246,299 @@ function generateDownloadPath() {
     return posterName + `_${year}${month.toString().padStart(2, '0')}${day.toString().padStart(2, '0')}${hour.toString().padStart(2, '0')}${minute.toString().padStart(2, '0')}${second.toString().padStart(2, '0')}`;
 }
 
+function generateCommentText(predictions) {
+    let commentText = "【自動化分析摘要】此留言由AI分析產生，僅供參考：\n\n";
+
+    predictions.forEach(prediction => {
+        const scamType = prediction.ref_text;
+        const confidence = (prediction.confidence * 100).toFixed(1);
+        const firstEvidence = prediction.evidences.length > 0 ? prediction.evidences[0] : "無具體證據";
+
+        commentText += `詐騙類型：${scamType} (可信度：${confidence}%)\n`;
+        commentText += `主要證據：${firstEvidence}\n\n`;
+    });
+
+    return commentText.trim(); // Remove trailing newlines
+}
+
+function postAnalysisToFacebookComment(commentText) {
+    console.log("Attempting to post comment:", commentText);
+
+    // Find the comment input field
+    const inputField = document.querySelector('div[role="textbox"][aria-label*="comment"], div[role="textbox"][aria-label*="留言"]');
+
+    if (inputField) {
+        console.log("Comment input field found:", inputField);
+        // Ensure it's contentEditable for divs
+        if (inputField.tagName.toLowerCase() === 'div') {
+            inputField.setAttribute('contenteditable', 'true');
+        }
+        
+        inputField.focus();
+        
+        // Set the text content
+        // Using innerText to better simulate user input, especially for line breaks
+        inputField.innerText = commentText; 
+
+        // Dispatch events to make Facebook's JS acknowledge the input
+        inputField.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        // Some FB implementations might also need a keyup or paste event
+        inputField.dispatchEvent(new Event('keyup', { bubbles: true, cancelable: true }));
+        inputField.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+
+
+        // Find the submit button (this selector might need to be very specific)
+        // It's often near the input field, but global selectors are tried first.
+        // Prioritize buttons that are explicitly for posting/sending a comment.
+        let submitButton = document.querySelector(
+            'button[aria-label="Post comment"], button[aria-label="發佈留言"], ' + // Specific labels first
+            'button[aria-label*="Post"], button[aria-label*="發佈"], ' + // More general labels
+            'button[type="submit"] svg, button[data-testid="react-composer-post-button"]' // Structure/test-id based
+        );
+        
+        // If a general submit button is not found, try to find one relative to the input field
+        if (!submitButton && inputField.form) {
+            submitButton = inputField.form.querySelector('button[type="submit"]');
+        }
+        // Fallback: Look for a button with a send icon (data-icon="send")
+        if (!submitButton) {
+            submitButton = document.querySelector('button[data-icon="send"], button[aria-label="Send"]');
+        }
+
+
+        if (submitButton) {
+            console.log("Submit button found:", submitButton);
+            // Brief delay to ensure text is processed, then click
+            setTimeout(() => {
+                submitButton.click();
+                console.log("Comment posted successfully (simulated).");
+                // TODO: Add user feedback (e.g., a small notification)
+            }, 500); // 500ms delay, might need adjustment
+        } else {
+            console.error("Submit button not found.");
+            alert("無法找到留言發佈按鈕。請手動發佈。");
+        }
+    } else {
+        console.error("Comment input field not found.");
+        alert("無法找到留言輸入框。");
+    }
+}
+
+// 新增函數：綜合風險評分
+function displayComprehensiveRiskAssessment(predictions) {
+    const contentArea = document.getElementById('fb-analyzer-content');
+    if (!contentArea) return;
+
+    // 讀取mockdata.json來獲取LINE ID和URL資訊
+    fetch(chrome.runtime.getURL('mockdata.json'))
+        .then(response => response.json())
+        .then(data => {
+            // 計算綜合評分
+            const riskLevel = calculateRiskLevel(predictions, data);
+            
+            // 創建綜合評分顯示區域
+            const riskSection = document.createElement('div');
+            riskSection.style.cssText = `
+                margin-bottom: 20px;
+                padding: 15px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            `;
+
+            const riskTitle = document.createElement('h4');
+            riskTitle.textContent = '🎯 綜合風險評分';
+            riskTitle.style.cssText = `
+                margin: 0 0 15px 0;
+                color: #495057;
+                font-size: 18px;
+                font-weight: bold;
+                border-bottom: 2px solid #e9ecef;
+                padding-bottom: 10px;
+            `;
+            riskSection.appendChild(riskTitle);
+
+            // 創建風險燈號顯示
+            const riskIndicator = document.createElement('div');
+            riskIndicator.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                margin-bottom: 15px;
+            `;
+
+            // 風險燈號圓圈
+            const riskCircle = document.createElement('div');
+            riskCircle.style.cssText = `
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                background: ${getRiskColor(riskLevel)};
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+                font-weight: bold;
+                color: white;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            `;
+            riskCircle.textContent = getRiskText(riskLevel);
+            riskIndicator.appendChild(riskCircle);
+
+            // 風險等級文字
+            const riskText = document.createElement('div');
+            riskText.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            `;
+
+            const riskLevelText = document.createElement('div');
+            riskLevelText.style.cssText = `
+                font-size: 20px;
+                font-weight: bold;
+                color: ${getRiskColor(riskLevel)};
+            `;
+            riskLevelText.textContent = getRiskLevelText(riskLevel);
+            riskText.appendChild(riskLevelText);
+
+            const riskDescription = document.createElement('div');
+            riskDescription.style.cssText = `
+                font-size: 14px;
+                color: #6c757d;
+            `;
+            riskDescription.textContent = getRiskDescription(riskLevel);
+            riskText.appendChild(riskDescription);
+
+            riskIndicator.appendChild(riskText);
+            riskSection.appendChild(riskIndicator);
+
+            // 顯示評分依據
+            const criteriaSection = document.createElement('div');
+            criteriaSection.style.cssText = `
+                background: white;
+                border-radius: 6px;
+                padding: 12px;
+                margin-top: 10px;
+            `;
+
+            const criteriaTitle = document.createElement('div');
+            criteriaTitle.style.cssText = `
+                font-size: 14px;
+                font-weight: bold;
+                color: #495057;
+                margin-bottom: 8px;
+            `;
+            criteriaTitle.textContent = '評分依據：';
+            criteriaSection.appendChild(criteriaTitle);
+
+            // 獲取評分依據
+            const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
+            const hasFraudType = predictions.length > 0;
+            const highestUrlLevel = getHighestUrlLevel(data.url_details);
+
+            const criteriaList = document.createElement('div');
+            criteriaList.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+                font-size: 12px;
+                color: #6c757d;
+            `;
+
+            criteriaList.innerHTML = `
+                <div>• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}</div>
+                <div>• 詐騙類型: ${hasFraudType ? '有' : '無'}</div>
+                <div>• 最高URL風險等級: ${highestUrlLevel}</div>
+            `;
+            criteriaSection.appendChild(criteriaList);
+            riskSection.appendChild(criteriaSection);
+
+            contentArea.appendChild(riskSection);
+        })
+        .catch(error => {
+            console.error('讀取mockdata.json失敗:', error);
+        });
+}
+
+// 計算風險等級
+function calculateRiskLevel(predictions, data) {
+    const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
+    const hasFraudType = predictions.length > 0;
+    const highestUrlLevel = getHighestUrlLevel(data.url_details);
+
+    // 根據評分標準判斷風險等級
+    if (hasSuspiciousLineId && !hasFraudType && highestUrlLevel === 'LOW') return 'RED';//LINE ID O 詐騙種類有無 X URL可疑等級 LOW
+    if (!hasSuspiciousLineId && hasFraudType && highestUrlLevel === 'LOW') return 'YELLOW';//LINE ID X 詐騙種類有無 O URL可疑等級 LOW
+    if (hasSuspiciousLineId && hasFraudType && highestUrlLevel === 'LOW') return 'RED';//LINE ID O 詐騙種類有無 O URL可疑等級 LOW
+    if (!hasSuspiciousLineId && !hasFraudType && highestUrlLevel === 'LOW') return 'GREEN';//LINE ID X 詐騙種類有無 X URL可疑等級 LOW
+    if (!hasSuspiciousLineId && !hasFraudType && highestUrlLevel === 'MEDIUM') return 'YELLOW';//LINE ID X 詐騙種類有無 X URL可疑等級 MEDIUM
+    if (hasSuspiciousLineId && !hasFraudType && highestUrlLevel === 'MEDIUM') return 'RED';//LINE ID O 詐騙種類有無 X URL可疑等級 MEDIUM
+    if (!hasSuspiciousLineId && hasFraudType && highestUrlLevel === 'MEDIUM') return 'ORANGE';//LINE ID X 詐騙種類有無 O URL可疑等級 MEDIUM
+    if (hasSuspiciousLineId && hasFraudType && highestUrlLevel === 'MEDIUM') return 'RED';//LINE ID O 詐騙種類有無 O URL可疑等級 MEDIUM
+    if (!hasSuspiciousLineId && !hasFraudType && highestUrlLevel === 'HIGH') return 'ORANGE';//LINE ID X 詐騙種類有無 X URL可疑等級 HIGH
+    if (!hasSuspiciousLineId && hasFraudType && highestUrlLevel === 'HIGH') return 'RED';//LINE ID X 詐騙種類有無 O URL可疑等級 HIGH
+    if (hasSuspiciousLineId && !hasFraudType && highestUrlLevel === 'HIGH') return 'RED';//LINE ID O 詐騙種類有無 X URL可疑等級 HIGH
+    if (hasSuspiciousLineId && hasFraudType && highestUrlLevel === 'HIGH') return 'RED';//LINE ID O 詐騙種類有無 O URL可疑等級 HIGH
+
+    return 'GREEN'; // 預設值
+}
+
+// 獲取最高URL風險等級
+function getHighestUrlLevel(urlDetails) {
+    const validUrls = urlDetails.filter(item => item.status === 1);
+    if (validUrls.length === 0) return 'LOW';
+
+    const levels = validUrls.map(item => item.level);
+    if (levels.includes('HIGH')) return 'HIGH';
+    if (levels.includes('MEDIUM')) return 'MEDIUM';
+    return 'LOW';
+}
+
+// 獲取風險顏色
+function getRiskColor(riskLevel) {
+    switch (riskLevel) {
+        case 'GREEN': return '#28a745';
+        case 'YELLOW': return '#ffc107';
+        case 'ORANGE': return '#fd7e14';
+        case 'RED': return '#dc3545';
+        default: return '#6c757d';
+    }
+}
+
+// 獲取風險文字
+function getRiskText(riskLevel) {
+    switch (riskLevel) {
+        case 'GREEN': return '低';
+        case 'YELLOW': return '中';
+        case 'ORANGE': return '高';
+        case 'RED': return '極';
+        default: return '?';
+    }
+}
+
+// 獲取風險等級文字
+function getRiskLevelText(riskLevel) {
+    switch (riskLevel) {
+        case 'GREEN': return '低風險';
+        case 'YELLOW': return '中風險';
+        case 'ORANGE': return '高風險';
+        case 'RED': return '極高風險';
+        default: return '未知風險';
+    }
+}
+
+// 獲取風險描述
+function getRiskDescription(riskLevel) {
+    switch (riskLevel) {
+        case 'GREEN': return '此貼文風險較低，但仍需保持警覺';
+        case 'YELLOW': return '此貼文存在中等風險，建議謹慎對待';
+        case 'ORANGE': return '此貼文風險較高，建議避免互動';
+        case 'RED': return '此貼文風險極高，強烈建議避免任何互動';
+        default: return '無法評估風險等級';
+    }
+}
+
 // 監聽來自 popup.js 的指令
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'extract') {
@@ -997,12 +1550,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // 顯示分析結果
         createDisplayArea();
         if (lastPostContent && lastAnalysisResult) {
+            // 先清空內容區域，避免重複顯示
+            const contentArea = document.getElementById('fb-analyzer-content');
+            if (contentArea) {
+                contentArea.innerHTML = '';
+            }
+            
             // 先顯示原始貼文內容
             updateDisplay(lastPostContent, false);
-            // 再顯示分析結果
-            updateDisplay(lastAnalysisResult.content, true);
+            // 再顯示分析結果（不顯示額外內容）
+            updateDisplay(lastAnalysisResult.content, true, false);
             // 重新高亮顯示證據
             highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
+            // 顯示可疑項目
+            displaySuspiciousItems();
+            // 顯示綜合評分
+            displayComprehensiveRiskAssessment(lastAnalysisResult.predictions);
         } else {
             // 如果沒有分析結果，顯示提示信息
             const contentArea = document.getElementById('fb-analyzer-content');

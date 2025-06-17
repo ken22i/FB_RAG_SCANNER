@@ -23,5 +23,11 @@
       "js": ["content.js"],
       "run_at": "document_idle"
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["mockdata.json"],
+      "matches": ["https://www.facebook.com/*"]
+    }
   ]
 }

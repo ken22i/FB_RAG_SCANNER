@@ -12,6 +12,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
+    // 關閉 popup 視窗
+    function closePopup() {
+        window.close();
+    }
+
     // 分析貼文按鈕點擊事件
     if (analyzeButton) {
         analyzeButton.addEventListener('click', () => {
@@ -19,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 chrome.tabs.sendMessage(tabs[0].id, { action: 'extract' }, (response) => {
                     if (response && response.status === 'success') {
                         showStatus('開始分析貼文...', 'success');
+                        setTimeout(closePopup, 500); // 延遲 500ms 後關閉，讓用戶看到成功訊息
                     } else {
                         showStatus('分析失敗，請確保您在 Facebook 頁面上', 'error');
                     }
@@ -36,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 chrome.tabs.sendMessage(tabs[0].id, { action: 'view_results' }, (response) => {
                     if (response && response.status === 'success') {
                         showStatus('顯示分析結果', 'success');
+                        setTimeout(closePopup, 500); // 延遲 500ms 後關閉，讓用戶看到成功訊息
                     } else {
                         showStatus('無法顯示結果，請先進行分析', 'error');
                     }
