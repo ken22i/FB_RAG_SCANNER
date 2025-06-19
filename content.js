@@ -2,6 +2,77 @@
 let lastAnalysisResult = null;
 let lastPostContent = null;
 
+// 從 storage 中載入保存的數據
+async function loadSavedData() {
+    try {
+        const result = await chrome.storage.local.get(['lastAnalysisResult', 'lastPostContent']);
+        if (result.lastAnalysisResult) {
+            lastAnalysisResult = result.lastAnalysisResult;
+            console.log('已從 storage 載入分析結果');
+        }
+        if (result.lastPostContent) {
+            lastPostContent = result.lastPostContent;
+            console.log('已從 storage 載入貼文內容');
+        }
+    } catch (error) {
+        console.error('載入保存的數據失敗:', error);
+    }
+}
+
+// 保存數據到 storage
+async function saveData() {
+    try {
+        console.log('開始保存數據到 storage');
+        console.log('lastAnalysisResult:', lastAnalysisResult);
+        console.log('lastPostContent:', lastPostContent);
+        
+        await chrome.storage.local.set({
+            lastAnalysisResult: lastAnalysisResult,
+            lastPostContent: lastPostContent
+        });
+        console.log('已保存數據到 storage');
+    } catch (error) {
+        console.error('保存數據失敗:', error);
+    }
+}
+
+// 頁面載入時載入保存的數據
+loadSavedData();
+
+// 頁面載入時清理舊的高亮效果
+function cleanupOldHighlights() {
+    // 清理舊的高亮效果
+    const oldHighlights = document.querySelectorAll('.fb-highlight-text');
+    oldHighlights.forEach(highlight => {
+        const container = highlight.parentElement;
+        if (container && container.classList.contains('fb-highlight-container')) {
+            // 恢復原始文本
+            const originalText = highlight.textContent;
+            container.replaceWith(originalText);
+        }
+    });
+
+    // 清理舊的提示框
+    const oldTooltips = document.querySelectorAll('.fb-analyzer-tooltip');
+    oldTooltips.forEach(tooltip => {
+        tooltip.remove();
+    });
+
+    // 移除舊的事件監聽器
+    const oldListener = document._fbAnalyzerClickListener;
+    if (oldListener) {
+        document.removeEventListener('click', oldListener, true);
+        document._fbAnalyzerClickListener = null;
+    }
+}
+
+// 頁面載入時執行清理
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', cleanupOldHighlights);
+} else {
+    cleanupOldHighlights();
+}
+
 function isStillInSamePost() {
     // 檢核相片是否為同一篇貼文
     const keyword = '這張相片來自一則貼文';
@@ -171,6 +242,39 @@ async function checkRAGStatus(jobId) {
     }
 }
 
+// 新增函數：調用第二個API進行分析
+async function analyzeWithSecondAPI(description) {
+    try {
+        const response = await chrome.runtime.sendMessage({
+            action: 'analyzeWithSecondAPI',
+            description: description
+        });
+        return response;
+    } catch (error) {
+        console.error('Error calling second API:', error);
+        throw error;
+    }
+}
+
+// 示例函數：使用第二個API分析文本
+async function analyzeTextWithSecondAPI(text) {
+    try {
+        console.log('🚀 開始使用第二個API分析文本');
+        
+        // 調用第二個API
+        const result = await analyzeWithSecondAPI(text);
+        console.log('📊 第二個API分析結果:', result);
+        
+        // 這裡可以處理返回的數據，格式應該與mockdata.json相同
+        // result 應該包含 line_id_details, url_details 等字段
+        
+        return result;
+    } catch (error) {
+        console.error('❌ 第二個API分析失敗:', error);
+        throw error;
+    }
+}
+
 async function waitForRAGCompletion(jobId, maxAttempts = 30, interval = 2000) {
     console.log(`🔄 開始等待 RAG 任務完成 (job_id: ${jobId})`);
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -269,6 +373,23 @@ function createDisplayArea() {
 }
 
 function highlightEvidenceInOriginalPost(predictions) {
+    // 清理舊的高亮效果
+    const oldHighlights = document.querySelectorAll('.fb-highlight-text');
+    oldHighlights.forEach(highlight => {
+        const container = highlight.parentElement;
+        if (container && container.classList.contains('fb-highlight-container')) {
+            // 恢復原始文本
+            const originalText = highlight.textContent;
+            container.replaceWith(originalText);
+        }
+    });
+
+    // 清理舊的提示框
+    const oldTooltips = document.querySelectorAll('.fb-analyzer-tooltip');
+    oldTooltips.forEach(tooltip => {
+        tooltip.remove();
+    });
+
     // 使用與 extractPostAndComments 相同的貼文選擇器
     const postElements = document.querySelectorAll('.html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x78zum5.xdt5ytf.x1iyjqo2.x1n2onr6.xqbnct6.xga75y6 .html-div.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl .x78zum5.xdt5ytf.xz62fqu.x16ldp7u .xu06os2.x1ok221b span div[dir=auto]');
     
@@ -276,6 +397,13 @@ function highlightEvidenceInOriginalPost(predictions) {
         console.log('找不到原始貼文元素');
         return;
     }
+
+    // === 新增：高亮前 snapshot 原始內容 ===
+    const originalTexts = [];
+    postElements.forEach(element => {
+        originalTexts.push(element.textContent);
+    });
+    // ==============================
 
     // 移除舊的事件監聽器
     const oldListener = document._fbAnalyzerClickListener;
@@ -350,14 +478,13 @@ function highlightEvidenceInOriginalPost(predictions) {
         // 將所有postElements的文本合併，保留換行符
         let combinedText = '';
         const elementTexts = [];
-        postElements.forEach(element => {
-            const text = element.textContent;
+        originalTexts.forEach((text, idx) => {
             elementTexts.push({
-                element: element,
+                element: postElements[idx],
                 text: text,
                 startIndex: combinedText.length,
                 endIndex: combinedText.length + text.length,
-                originalHTML: element.innerHTML
+                originalHTML: postElements[idx].innerHTML
             });
             combinedText += text + '\n'; // 添加換行符
         });
@@ -407,88 +534,295 @@ function highlightEvidenceInOriginalPost(predictions) {
 
                 console.log('受影響的元素數量:', affectedElements.length);
 
-                // 在每個受影響的元素中進行高亮
-                affectedElements.forEach(item => {
-                    const elementStart = item.startIndex;
-                    const elementEnd = item.endIndex;
+                // === PATCH: 跨多 element 分段高亮 ===
+                if (affectedElements.length === 1) {
+                    // 單一 element，原本邏輯
+                    const item = affectedElements[0];
                     const element = item.element;
-
-                    // 計算在此元素中的證據範圍
+                    const elementStart = item.startIndex;
                     const localStart = Math.max(0, evidenceStart - elementStart);
                     const localEnd = Math.min(element.textContent.length, evidenceEnd - elementStart);
-
-                    // 獲取要高亮的文本
                     const textToHighlight = element.textContent.substring(localStart, localEnd);
-                    console.log('要高亮的文本:', textToHighlight);
-
-                    // 創建容器元素
-                    const container = document.createElement('span');
-                    container.style.cssText = `
-                        position: relative;
-                        display: inline-block;
-                    `;
-
-                    // 創建高亮元素
-                    const highlightSpan = document.createElement('span');
-                    highlightSpan.textContent = textToHighlight;
-                    highlightSpan.className = 'fb-highlight-text';
-                    highlightSpan.style.cssText = `
-                        background-color: rgba(255, 255, 0, 0.3);
-                        border-bottom: 2px solid #ffd700;
-                        display: inline;
-                        cursor: pointer;
-                        user-select: none;
-                    `;
-
-                    // 創建提示框
-                    const tooltip = document.createElement('div');
-                    tooltip.className = 'fb-analyzer-tooltip';
-                    tooltip.style.cssText = `
-                        position: absolute;
-                        background: #333;
-                        color: white;
-                        padding: 8px 12px;
-                        border-radius: 4px;
-                        font-size: 12px;
-                        z-index: 10000;
-                        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-                        width: max-content;
-                        max-width: 300px;
-                        left: 0;
-                        top: -40px;
-                        display: none;
-                        white-space: normal;
-                        word-wrap: break-word;
-                    `;
-                    tooltip.textContent = `詐騙類型: ${refText}`;
-
-                    // 將高亮元素和提示框添加到容器中
-                    container.appendChild(highlightSpan);
-                    container.appendChild(tooltip);
-
-                    // 替換原始文本中的證據部分
-                    const escapedText = textToHighlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const regex = new RegExp(escapedText, 'g');
-                    const newHTML = element.innerHTML.replace(regex, container.outerHTML);
-                    
-                    // 檢查替換是否成功
-                    if (newHTML !== element.innerHTML) {
-                        console.log('成功替換文本');
-                        element.innerHTML = newHTML;
+                    // 加強 log
+                    console.log('--- 單一 element 高亮 debug ---');
+                    console.log('element.textContent:', element.textContent);
+                    console.log('localStart:', localStart, 'localEnd:', localEnd);
+                    console.log('substring 取到的文本:', textToHighlight);
+                    console.log('要高亮的文本:', normalizedEvidence);
+                    const normalize = str => str.replace(/\s+/g, '').trim();
+                    console.log('normalize(substring):', normalize(textToHighlight));
+                    console.log('normalize(evidence):', normalize(normalizedEvidence));
+                    // 比較 substring 算出來的內容和 normalizedEvidence
+                    if (normalize(textToHighlight) === normalize(normalizedEvidence)) {
+                        // 只有一致時才進行 substring 高亮
+                        // 建立高亮 span
+                        const container = document.createElement('span');
+                        container.className = 'fb-highlight-container';
+                        container.style.cssText = `
+                            position: relative;
+                            display: inline-block;
+                        `;
+                        const highlightSpan = document.createElement('span');
+                        highlightSpan.textContent = textToHighlight;
+                        highlightSpan.className = 'fb-highlight-text';
+                        highlightSpan.style.cssText = `
+                            background-color: rgba(255, 255, 0, 0.3);
+                            border-bottom: 2px solid #ffd700;
+                            display: inline;
+                            cursor: pointer;
+                            user-select: none;
+                        `;
+                        const tooltip = document.createElement('div');
+                        tooltip.className = 'fb-analyzer-tooltip';
+                        tooltip.style.cssText = `
+                            position: absolute;
+                            background: #333;
+                            color: white;
+                            padding: 8px 12px;
+                            border-radius: 4px;
+                            font-size: 12px;
+                            z-index: 10000;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                            width: max-content;
+                            max-width: 300px;
+                            left: 0;
+                            top: -40px;
+                            display: none;
+                            white-space: normal;
+                            word-wrap: break-word;
+                        `;
+                        tooltip.textContent = `詐騙類型: ${refText}`;
+                        container.appendChild(highlightSpan);
+                        container.appendChild(tooltip);
+                        // 替換 element 內容
+                        const before = element.textContent.slice(0, localStart);
+                        const after = element.textContent.slice(localEnd);
+                        element.innerHTML = '';
+                        element.appendChild(document.createTextNode(before));
+                        element.appendChild(container);
+                        element.appendChild(document.createTextNode(after));
                     } else {
-                        console.log('替換失敗，嘗試使用原始文本');
-                        // 如果替換失敗，嘗試使用原始文本
-                        const originalText = element.textContent;
-                        const originalRegex = new RegExp(originalText.substring(localStart, localEnd).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                        const fallbackHTML = element.innerHTML.replace(originalRegex, container.outerHTML);
-                        if (fallbackHTML !== element.innerHTML) {
-                            console.log('使用原始文本替換成功');
-                            element.innerHTML = fallbackHTML;
+                        // 不一致，直接用 normalizedEvidence 高亮（正則替換）
+                        console.log('substring 取到的文本與匹配到的文本不一致，直接用 normalizedEvidence 高亮');
+                        console.log('substring 取到的文本:', textToHighlight);
+                        console.log('要高亮的文本:', normalizedEvidence);
+                        const evidenceContainer = document.createElement('span');
+                        evidenceContainer.className = 'fb-highlight-container';
+                        evidenceContainer.style.cssText = `
+                            position: relative;
+                            display: inline-block;
+                        `;
+                        const evidenceHighlight = document.createElement('span');
+                        evidenceHighlight.textContent = normalizedEvidence;
+                        evidenceHighlight.className = 'fb-highlight-text';
+                        evidenceHighlight.style.cssText = `
+                            background-color: rgba(255, 255, 0, 0.3);
+                            border-bottom: 2px solid #ffd700;
+                            display: inline;
+                            cursor: pointer;
+                            user-select: none;
+                        `;
+                        const evidenceTooltip = document.createElement('div');
+                        evidenceTooltip.className = 'fb-analyzer-tooltip';
+                        evidenceTooltip.style.cssText = `
+                            position: absolute;
+                            background: #333;
+                            color: white;
+                            padding: 8px 12px;
+                            border-radius: 4px;
+                            font-size: 12px;
+                            z-index: 10000;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                            width: max-content;
+                            max-width: 300px;
+                            left: 0;
+                            top: -40px;
+                            display: none;
+                            white-space: normal;
+                            word-wrap: break-word;
+                        `;
+                        evidenceTooltip.textContent = `詐騙類型: ${refText}`;
+                        evidenceContainer.appendChild(evidenceHighlight);
+                        evidenceContainer.appendChild(evidenceTooltip);
+                        const evidenceEscaped = normalizedEvidence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const evidenceRegex = new RegExp(evidenceEscaped, 'g');
+                        // 修正：每次 fallback 都用 textContent 做正則替換
+                        const replacedText = element.textContent.replace(evidenceRegex, evidenceContainer.outerHTML);
+                        if (replacedText !== element.textContent) {
+                            element.innerHTML = replacedText;
+                            console.log('用 normalizedEvidence 成功高亮');
                         } else {
-                            console.log('所有替換嘗試都失敗');
+                            console.log('用 normalizedEvidence 也無法高亮');
+                        }
+
+                    }
+                } else if (affectedElements.length > 1) {
+                    // 跨多個 element 分段高亮
+                    let allHighlight = '';
+                    affectedElements.forEach((item, idx) => {
+                        const element = item.element;
+                        const elementStart = item.startIndex;
+                        let localStart, localEnd;
+                        if (idx === 0) {
+                            localStart = evidenceStart - elementStart;
+                            localEnd = element.textContent.length;
+                        } else if (idx === affectedElements.length - 1) {
+                            localStart = 0;
+                            localEnd = evidenceEnd - elementStart;
+                        } else {
+                            localStart = 0;
+                            localEnd = element.textContent.length;
+                        }
+                        if (localStart < 0) localStart = 0;
+                        if (localEnd > element.textContent.length) localEnd = element.textContent.length;
+                        const highlight = element.textContent.slice(localStart, localEnd);
+                        allHighlight += highlight;
+                    });
+                    const normalize = str => str.replace(/\s+/g, '').trim();
+                    if (normalize(allHighlight) === normalize(normalizedEvidence)) {
+                        // 分段高亮
+                        affectedElements.forEach((item, idx) => {
+                            const element = item.element;
+                            const elementStart = item.startIndex;
+                            let localStart, localEnd;
+                            if (idx === 0) {
+                                localStart = evidenceStart - elementStart;
+                                localEnd = element.textContent.length;
+                            } else if (idx === affectedElements.length - 1) {
+                                localStart = 0;
+                                localEnd = evidenceEnd - elementStart;
+                            } else {
+                                localStart = 0;
+                                localEnd = element.textContent.length;
+                            }
+                            if (localStart < 0) localStart = 0;
+                            if (localEnd > element.textContent.length) localEnd = element.textContent.length;
+                            const before = element.textContent.slice(0, localStart);
+                            const highlight = element.textContent.slice(localStart, localEnd);
+                            const after = element.textContent.slice(localEnd);
+                            // 建立高亮 span
+                            const highlightSpan = document.createElement('span');
+                            highlightSpan.textContent = highlight;
+                            highlightSpan.className = 'fb-highlight-text';
+                            highlightSpan.style.cssText = `
+                                background-color: rgba(255, 255, 0, 0.3);
+                                border-bottom: 2px solid #ffd700;
+                                display: inline;
+                                cursor: pointer;
+                                user-select: none;
+                            `;
+                            let container;
+                            if (idx === 0) {
+                                container = document.createElement('span');
+                                container.className = 'fb-highlight-container';
+                                container.style.cssText = `
+                                    position: relative;
+                                    display: inline-block;
+                                `;
+                                const tooltip = document.createElement('div');
+                                tooltip.className = 'fb-analyzer-tooltip';
+                                tooltip.style.cssText = `
+                                    position: absolute;
+                                    background: #333;
+                                    color: white;
+                                    padding: 8px 12px;
+                                    border-radius: 4px;
+                                    font-size: 12px;
+                                    z-index: 10000;
+                                    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                                    width: max-content;
+                                    max-width: 300px;
+                                    left: 0;
+                                    top: -40px;
+                                    display: none;
+                                    white-space: normal;
+                                    word-wrap: break-word;
+                                `;
+                                tooltip.textContent = `詐騙類型: ${refText}`;
+                                container.appendChild(highlightSpan);
+                                container.appendChild(tooltip);
+                            } else {
+                                container = highlightSpan;
+                            }
+                            // 替換 element 內容
+                            element.innerHTML = '';
+                            element.appendChild(document.createTextNode(before));
+                            element.appendChild(container);
+                            element.appendChild(document.createTextNode(after));
+                            // log
+                            console.log('--- 跨多 element 高亮 debug ---');
+                            console.log('element index:', idx);
+                            console.log('element.textContent:', element.textContent);
+                            console.log('localStart:', localStart, 'localEnd:', localEnd);
+                            console.log('highlight:', highlight);
+                            console.log('before:', before);
+                            console.log('after:', after);
+                        });
+                    } else {
+                        // fallback: 合併所有 affectedElements 的 textContent 做正則替換，然後分配回去
+                        console.log('跨多 element 分段高亮合併後與要高亮的文本不一致，fallback 用正則替換');
+                        console.log('分段高亮合併:', allHighlight);
+                        console.log('要高亮的文本:', normalizedEvidence);
+
+                        // 合併所有 affectedElements 的 textContent
+                        const fullText = affectedElements.map(item => item.element.textContent).join('');
+                        const evidenceContainer = document.createElement('span');
+                        evidenceContainer.className = 'fb-highlight-container';
+                        evidenceContainer.style.cssText = `
+                            position: relative;
+                            display: inline-block;
+                        `;
+                        const evidenceHighlight = document.createElement('span');
+                        evidenceHighlight.textContent = normalizedEvidence;
+                        evidenceHighlight.className = 'fb-highlight-text';
+                        evidenceHighlight.style.cssText = `
+                            background-color: rgba(255, 255, 0, 0.3);
+                            border-bottom: 2px solid #ffd700;
+                            display: inline;
+                            cursor: pointer;
+                            user-select: none;
+                        `;
+                        const evidenceTooltip = document.createElement('div');
+                        evidenceTooltip.className = 'fb-analyzer-tooltip';
+                        evidenceTooltip.style.cssText = `
+                            position: absolute;
+                            background: #333;
+                            color: white;
+                            padding: 8px 12px;
+                            border-radius: 4px;
+                            font-size: 12px;
+                            z-index: 10000;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                            width: max-content;
+                            max-width: 300px;
+                            left: 0;
+                            top: -40px;
+                            display: none;
+                            white-space: normal;
+                            word-wrap: break-word;
+                        `;
+                        evidenceTooltip.textContent = `詐騙類型: ${refText}`;
+                        evidenceContainer.appendChild(evidenceHighlight);
+                        evidenceContainer.appendChild(evidenceTooltip);
+
+                        const evidenceEscaped = normalizedEvidence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const evidenceRegex = new RegExp(evidenceEscaped, 'g');
+                        const replaced = fullText.replace(evidenceRegex, evidenceContainer.outerHTML);
+
+                        if (replaced !== fullText) {
+                            // 只在第一個 element 放入 replaced，其餘清空
+                            affectedElements[0].element.innerHTML = replaced;
+                            for (let i = 1; i < affectedElements.length; i++) {
+                                affectedElements[i].element.innerHTML = '';
+                            }
+                            console.log('用 normalizedEvidence 成功高亮（跨多 element fallback）');
+                        } else {
+                            // fallback 也失敗，保留原文
+                            console.log('用 normalizedEvidence 也無法高亮（跨多 element fallback）');
                         }
                     }
-                });
+                }
+                // === PATCH END ===
             } else {
                 console.log('未找到匹配的文本:', normalizedEvidence);
             }
@@ -496,7 +830,7 @@ function highlightEvidenceInOriginalPost(predictions) {
     });
 }
 
-function updateDisplay(content, isRAGResult = false, showAdditionalContent = true) {
+async function updateDisplay(content, isRAGResult = false, showAdditionalContent = true) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
 
@@ -544,39 +878,139 @@ function updateDisplay(content, isRAGResult = false, showAdditionalContent = tru
             copyButton.style.backgroundColor = '#1877f2';
         };
         copyButton.onclick = () => {
-            // 格式化分析結果
+            // 格式化完整的分析結果
             const predictions = content.data.results[0].predictions;
-            let formattedText = '【詐騙分析結果】\n\n';
+            let formattedText = '詐騙分析結果\n\n';
             
-            predictions.forEach((prediction, index) => {
-                formattedText += `詐騙類型：${prediction.ref_text}\n`;
-                formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
-                formattedText += '發現的證據：\n';
-                prediction.evidences.forEach((evidence, i) => {
-                    formattedText += `${i + 1}. ${evidence}\n`;
-                });
-                formattedText += '\n';
-            });
+            // 1. 綜合風險評分
+            // formattedText += '🎯\n';
+            // formattedText += '================\n';
+            
+            // 讀取mockdata.json來獲取風險評分
+            fetch(chrome.runtime.getURL('mockdata.json'))
+                .then(response => response.json())
+                .then(data => {
+                    const riskLevel = calculateRiskLevel(predictions, data);
+                    formattedText += `風險等級：${getRiskLevelText(riskLevel)}\n`;
+                    formattedText += `風險描述：${getRiskDescription(riskLevel)}\n\n`;
+                    
+                    // 評分依據
+                    const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
+                    const hasFraudType = predictions.length > 0;
+                    const highestUrlLevel = getHighestUrlLevel(data.url_details);
+                    
+                    formattedText += '評分依據：\n';
+                    formattedText += `• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}\n`;
+                    formattedText += `• 詐騙類型: ${hasFraudType ? '有' : '無'}\n`;
+                    formattedText += `• 最高URL風險等級: ${highestUrlLevel}\n\n`;
+                    
+                    // 2. 可疑項目
+                    // formattedText += '🔍\n';
+                    // formattedText += '====================\n';
+                    
+                    // 可疑LINE ID
+                    const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
+                    if (suspiciousLineIds.length > 0) {
+                        formattedText += '📱 可疑LINE ID：\n';
+                        suspiciousLineIds.forEach(item => {
+                            formattedText += `• ${item.id}\n`;
+                        });
+                        formattedText += '\n';
+                    }
+                    
+                    // 可疑URL
+                    const suspiciousUrls = data.url_details.filter(item => 
+                        item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
+                    );
+                    if (suspiciousUrls.length > 0) {
+                        formattedText += '🌐 可疑URL：\n';
+                        suspiciousUrls.forEach(item => {
+                            formattedText += `• ${item.url} (${item.level}, 詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%)\n`;
+                        });
+                        formattedText += '\n';
+                    }
+                    
+                    if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
+                        formattedText += '未偵測到可疑的LINE ID或URL\n\n';
+                    }
+                    
+                    // 3. 詐騙類型
+                    formattedText += '⚠️ 詐騙類型分析\n';
+                    formattedText += '================\n';
+                    
+                    if (predictions.length === 0) {
+                        formattedText += '未偵測到詐騙類型\n';
+                    } else {
+                        predictions.forEach((prediction, index) => {
+                            formattedText += `詐騙類型：${prediction.ref_text}\n`;
+                            formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
+                            formattedText += '發現的證據：\n';
+                            prediction.evidences.forEach((evidence, i) => {
+                                formattedText += `${i + 1}. ${evidence}\n`;
+                            });
+                            formattedText += '\n';
+                        });
+                    }
 
-            // 複製到剪貼簿
-            navigator.clipboard.writeText(formattedText).then(() => {
-                // 顯示複製成功提示
-                const originalText = copyButton.textContent;
-                copyButton.textContent = '已複製！';//暫時顯示已複製
-                copyButton.style.backgroundColor = '#28a745';
-                setTimeout(() => {
-                    copyButton.textContent = originalText;
-                    copyButton.style.backgroundColor = '#1877f2';
-                }, 2000);
-            }).catch(err => {
-                console.error('複製失敗:', err);
-                copyButton.textContent = '複製失敗';
-                copyButton.style.backgroundColor = '#dc3545';
-                setTimeout(() => {
-                    copyButton.textContent = '複製分析結果';
-                    copyButton.style.backgroundColor = '#1877f2';
-                }, 2000);
-            });
+                    // 複製到剪貼簿
+                    navigator.clipboard.writeText(formattedText).then(() => {
+                        // 顯示複製成功提示
+                        const originalText = copyButton.textContent;
+                        copyButton.textContent = '已複製！';
+                        copyButton.style.backgroundColor = '#28a745';
+                        setTimeout(() => {
+                            copyButton.textContent = originalText;
+                            copyButton.style.backgroundColor = '#1877f2';
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('複製失敗:', err);
+                        copyButton.textContent = '複製失敗';
+                        copyButton.style.backgroundColor = '#dc3545';
+                        setTimeout(() => {
+                            copyButton.textContent = '複製分析結果';
+                            copyButton.style.backgroundColor = '#1877f2';
+                        }, 2000);
+                    });
+                })
+                .catch(error => {
+                    console.error('讀取mockdata.json失敗:', error);
+                    // 如果讀取失敗，只複製詐騙類型
+                    formattedText += '⚠️ 詐騙類型分析\n';
+                    formattedText += '================\n';
+                    
+                    if (predictions.length === 0) {
+                        formattedText += '未偵測到詐騙類型\n';
+                    } else {
+                        predictions.forEach((prediction, index) => {
+                            formattedText += `詐騙類型：${prediction.ref_text}\n`;
+                            formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
+                            formattedText += '發現的證據：\n';
+                            prediction.evidences.forEach((evidence, i) => {
+                                formattedText += `${i + 1}. ${evidence}\n`;
+                            });
+                            formattedText += '\n';
+                        });
+                    }
+
+                    // 複製到剪貼簿
+                    navigator.clipboard.writeText(formattedText).then(() => {
+                        const originalText = copyButton.textContent;
+                        copyButton.textContent = '已複製！';
+                        copyButton.style.backgroundColor = '#28a745';
+                        setTimeout(() => {
+                            copyButton.textContent = originalText;
+                            copyButton.style.backgroundColor = '#1877f2';
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('複製失敗:', err);
+                        copyButton.textContent = '複製失敗';
+                        copyButton.style.backgroundColor = '#dc3545';
+                        setTimeout(() => {
+                            copyButton.textContent = '複製分析結果';
+                            copyButton.style.backgroundColor = '#1877f2';
+                        }, 2000);
+                    });
+                });
         };
         title.appendChild(copyButton);
 
@@ -633,9 +1067,82 @@ function updateDisplay(content, isRAGResult = false, showAdditionalContent = tru
         // 解析分析結果
         const predictions = content.data.results[0].predictions;
         
-        // 創建分析結果容器
-        const analysisContainer = document.createElement('div');
-        analysisContainer.style.cssText = `
+        // 保存分析結果
+        lastAnalysisResult = {
+            content: content,
+            predictions: predictions
+        };
+        
+        // 保存到 storage
+        await saveData();
+
+        // 在原始貼文中高亮顯示證據
+        // highlightEvidenceInOriginalPost(predictions);
+
+        // 只有在需要顯示額外內容時才調用這些函數
+        if (showAdditionalContent) {
+            // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
+            (async () => {
+                await displayAllAnalysisResults(predictions);
+            })();
+        }
+    } else {
+        contentDiv.textContent = content;
+        section.appendChild(contentDiv);
+        // 保存原始貼文內容
+        lastPostContent = content;
+        
+        // 保存到 storage
+        await saveData();
+    }
+    
+    // 將 section 添加到 contentArea（無論是否為 RAG 結果）
+    contentArea.appendChild(section);
+}
+
+// 新增函數：顯示詐騙類型
+function displayFraudTypes(predictions) {
+    const contentArea = document.getElementById('fb-analyzer-content');
+    if (!contentArea) return;
+
+    // 創建詐騙類型顯示區域
+    const fraudSection = document.createElement('div');
+    fraudSection.style.cssText = `
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    `;
+
+    const fraudTitle = document.createElement('h4');
+    fraudTitle.textContent = '⚠️ 詐騙類型分析';
+    fraudTitle.style.cssText = `
+        margin: 0 0 15px 0;
+        color: #dc3545;
+        font-size: 18px;
+        font-weight: bold;
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 10px;
+    `;
+    fraudSection.appendChild(fraudTitle);
+
+    if (predictions.length === 0) {
+        const noFraudDiv = document.createElement('div');
+        noFraudDiv.style.cssText = `
+            text-align: center;
+            padding: 20px;
+            color: #28a745;
+            font-style: italic;
+            background: white;
+            border-radius: 6px;
+        `;
+        noFraudDiv.textContent = '未偵測到詐騙類型';
+        fraudSection.appendChild(noFraudDiv);
+    } else {
+        // 創建詐騙類型容器
+        const fraudContainer = document.createElement('div');
+        fraudContainer.style.cssText = `
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -655,7 +1162,7 @@ function updateDisplay(content, isRAGResult = false, showAdditionalContent = tru
             const scamTypeContainer = document.createElement('div');
             scamTypeContainer.style.cssText = `
                 display: flex;
-                align-items: flex-start; /* 將元素對齊到頂部 */
+                align-items: flex-start;
                 gap: 10px;
                 margin-bottom: 10px;
             `;
@@ -669,25 +1176,17 @@ function updateDisplay(content, isRAGResult = false, showAdditionalContent = tru
             `;
 
             const warningIcon = document.createElement('span');
-            warningIcon.textContent = '⚠'; // 使用 unicode 警告符號
+            warningIcon.textContent = '⚠';
             warningIcon.style.cssText = `
-                font-size: 28px; /* 較大的圖標 */
+                font-size: 28px;
                 line-height: 1;
             `;
             iconTextGroup.appendChild(warningIcon);
-
-            // const scamLabel = document.createElement('div');
-            // scamLabel.textContent = '騙';
-            // scamLabel.style.cssText = `
-            //     font-size: 12px; /* "騙"字的字體較小 */
-            //     font-weight: bold;
-            // `;
-            // iconTextGroup.appendChild(scamLabel);
             scamTypeContainer.appendChild(iconTextGroup);
 
             const scamTypeText = document.createElement('div');
             scamTypeText.style.cssText = `
-                font-size: 18px; /* 詐騙類型文字字體較大 */
+                font-size: 18px;
                 font-weight: bold;
                 color: #dc3545;
             `;
@@ -749,252 +1248,208 @@ function updateDisplay(content, isRAGResult = false, showAdditionalContent = tru
             });
             predictionCard.appendChild(evidenceList);
 
-            analysisContainer.appendChild(predictionCard);
+            fraudContainer.appendChild(predictionCard);
         });
 
-        contentDiv.appendChild(analysisContainer);
-        section.appendChild(contentDiv);
-
-        // 在原始貼文中高亮顯示證據
-        highlightEvidenceInOriginalPost(predictions);
-
-        // 保存分析結果
-        lastAnalysisResult = {
-            content: content,
-            predictions: predictions
-        };
-
-        // 只有在需要顯示額外內容時才調用這些函數
-        if (showAdditionalContent) {
-            // 添加可疑LINE ID和可疑URL顯示區域
-            displaySuspiciousItems();
-            
-            // 添加綜合評分顯示
-            displayComprehensiveRiskAssessment(predictions);
-        }
-    } else {
-        contentDiv.textContent = content;
-        section.appendChild(contentDiv);
-        // 保存原始貼文內容
-        lastPostContent = content;
+        fraudSection.appendChild(fraudContainer);
     }
-    
-    contentArea.appendChild(section);
+
+    contentArea.appendChild(fraudSection);
 }
 
 // 新增函數：顯示可疑LINE ID和可疑URL
-function displaySuspiciousItems() {
+function displaySuspiciousItems(data) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
 
-    // 讀取mockdata.json
-    fetch(chrome.runtime.getURL('mockdata.json'))
-        .then(response => response.json())
-        .then(data => {
-            // 創建可疑項目顯示區域
-            const suspiciousSection = document.createElement('div');
-            suspiciousSection.style.cssText = `
-                margin-bottom: 20px;
-                padding: 15px;
-                background: #f8f9fa;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            `;
+    // 創建可疑項目顯示區域
+    const suspiciousSection = document.createElement('div');
+    suspiciousSection.style.cssText = `
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    `;
 
-            const suspiciousTitle = document.createElement('h4');
-            suspiciousTitle.textContent = '🔍 偵測到的可疑項目';
-            suspiciousTitle.style.cssText = `
-                margin: 0 0 15px 0;
-                color: #dc3545;
-                font-size: 18px;
-                font-weight: bold;
-                border-bottom: 2px solid #e9ecef;
-                padding-bottom: 10px;
-            `;
-            suspiciousSection.appendChild(suspiciousTitle);
+    const suspiciousTitle = document.createElement('h4');
+    // suspiciousTitle.textContent = '🔍';
+    suspiciousTitle.style.cssText = `
+        margin: 0 0 15px 0;
+        color: #dc3545;
+        font-size: 18px;
+        font-weight: bold;
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 10px;
+    `;
+    suspiciousSection.appendChild(suspiciousTitle);
 
-            // 處理可疑LINE ID
-            const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
-            if (suspiciousLineIds.length > 0) {
-                const lineIdContainer = document.createElement('div');
-                lineIdContainer.style.cssText = `
-                    margin-bottom: 15px;
-                `;
+    // 處理可疑LINE ID
+    const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
+    if (suspiciousLineIds.length > 0) {
+        const lineIdContainer = document.createElement('div');
+        lineIdContainer.style.cssText = `
+            margin-bottom: 15px;
+        `;
 
-                const lineIdTitle = document.createElement('div');
-                lineIdTitle.style.cssText = `
-                    font-size: 16px;
-                    font-weight: bold;
-                    color: #495057;
-                    margin-bottom: 10px;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                `;
-                lineIdTitle.innerHTML = '📱 可疑LINE ID';
-                lineIdContainer.appendChild(lineIdTitle);
+        const lineIdTitle = document.createElement('div');
+        lineIdTitle.style.cssText = `
+            font-size: 16px;
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        `;
+        lineIdTitle.innerHTML = '📱 可疑LINE ID';
+        lineIdContainer.appendChild(lineIdTitle);
 
-                const lineIdList = document.createElement('div');
-                lineIdList.style.cssText = `
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 8px;
-                `;
+        const lineIdList = document.createElement('div');
+        lineIdList.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        `;
 
-                suspiciousLineIds.forEach(item => {
-                    const lineIdCard = document.createElement('div');
-                    lineIdCard.style.cssText = `
-                        background: #fff3cd;
-                        border: 1px solid #ffeaa7;
-                        border-radius: 6px;
-                        padding: 8px 12px;
-                        font-size: 14px;
-                        font-weight: bold;
-                        color: #856404;
-                        display: flex;
-                        align-items: center;
-                        gap: 6px;
-                    `;
-                    lineIdCard.innerHTML = `⚠️ ${item.id}`;
-                    lineIdList.appendChild(lineIdCard);
-                });
-
-                lineIdContainer.appendChild(lineIdList);
-                suspiciousSection.appendChild(lineIdContainer);
-            }
-
-            // 處理可疑URL（HIGH和MEDIUM等級）
-            const suspiciousUrls = data.url_details.filter(item => 
-                item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
-            );
-            
-            if (suspiciousUrls.length > 0) {
-                const urlContainer = document.createElement('div');
-                urlContainer.style.cssText = `
-                    margin-bottom: 15px;
-                `;
-
-                const urlTitle = document.createElement('div');
-                urlTitle.style.cssText = `
-                    font-size: 16px;
-                    font-weight: bold;
-                    color: #495057;
-                    margin-bottom: 10px;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                `;
-                urlTitle.innerHTML = '🌐 可疑URL';
-                urlContainer.appendChild(urlTitle);
-
-                const urlList = document.createElement('div');
-                urlList.style.cssText = `
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
-                `;
-
-                suspiciousUrls.forEach(item => {
-                    const urlCard = document.createElement('div');
-                    urlCard.style.cssText = `
-                        background: white;
-                        border-radius: 6px;
-                        padding: 12px;
-                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                        border-left: 4px solid ${item.level === 'HIGH' ? '#dc3545' : '#ffc107'};
-                    `;
-
-                    const urlHeader = document.createElement('div');
-                    urlHeader.style.cssText = `
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        margin-bottom: 8px;
-                    `;
-
-                    const urlText = document.createElement('div');
-                    urlText.style.cssText = `
-                        font-size: 14px;
-                        font-weight: bold;
-                        color: #495057;
-                        word-break: break-all;
-                    `;
-                    urlText.textContent = item.url;
-
-                    const levelBadge = document.createElement('span');
-                    levelBadge.style.cssText = `
-                        background: ${item.level === 'HIGH' ? '#dc3545' : '#ffc107'};
-                        color: white;
-                        padding: 4px 8px;
-                        border-radius: 4px;
-                        font-size: 12px;
-                        font-weight: bold;
-                    `;
-                    levelBadge.textContent = item.level;
-
-                    urlHeader.appendChild(urlText);
-                    urlHeader.appendChild(levelBadge);
-                    urlCard.appendChild(urlHeader);
-
-                    const urlDetails = document.createElement('div');
-                    urlDetails.style.cssText = `
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        font-size: 12px;
-                        color: #6c757d;
-                    `;
-
-                    const scamProbability = document.createElement('div');
-                    scamProbability.textContent = `詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%`;
-
-                    const source = document.createElement('div');
-                    source.textContent = `來源: ${item.source}`;
-
-                    urlDetails.appendChild(scamProbability);
-                    urlDetails.appendChild(source);
-                    urlCard.appendChild(urlDetails);
-
-                    urlList.appendChild(urlCard);
-                });
-
-                urlContainer.appendChild(urlList);
-                suspiciousSection.appendChild(urlContainer);
-            }
-
-            // 如果沒有可疑項目，顯示提示信息
-            if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
-                const noSuspiciousDiv = document.createElement('div');
-                noSuspiciousDiv.style.cssText = `
-                    text-align: center;
-                    padding: 20px;
-                    color: #6c757d;
-                    font-style: italic;
-                `;
-                noSuspiciousDiv.textContent = '未偵測到可疑的LINE ID或URL';
-                suspiciousSection.appendChild(noSuspiciousDiv);
-            }
-
-            contentArea.appendChild(suspiciousSection);
-        })
-        .catch(error => {
-            console.error('讀取mockdata.json失敗:', error);
-            // 顯示錯誤信息
-            const errorDiv = document.createElement('div');
-            errorDiv.style.cssText = `
-                background-color: #ffebee;
-                color: #d32f2f;
-                padding: 10px;
-                border-radius: 4px;
-                margin-bottom: 20px;
+        suspiciousLineIds.forEach(item => {
+            const lineIdCard = document.createElement('div');
+            lineIdCard.style.cssText = `
+                background: #fff3cd;
+                border: 1px solid #ffeaa7;
+                border-radius: 6px;
+                padding: 8px 12px;
                 font-size: 14px;
+                font-weight: bold;
+                color: #856404;
+                display: flex;
+                align-items: center;
+                gap: 6px;
             `;
-            errorDiv.textContent = '無法讀取可疑項目資料';
-            contentArea.appendChild(errorDiv);
+            lineIdCard.innerHTML = `⚠️ ${item.id}`;
+            lineIdList.appendChild(lineIdCard);
         });
+
+        lineIdContainer.appendChild(lineIdList);
+        suspiciousSection.appendChild(lineIdContainer);
+    }
+
+    // 處理可疑URL（HIGH和MEDIUM等級）
+    const suspiciousUrls = data.url_details.filter(item => 
+        item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
+    );
+    
+    if (suspiciousUrls.length > 0) {
+        const urlContainer = document.createElement('div');
+        urlContainer.style.cssText = `
+            margin-bottom: 15px;
+        `;
+
+        const urlTitle = document.createElement('div');
+        urlTitle.style.cssText = `
+            font-size: 16px;
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        `;
+        urlTitle.innerHTML = '🌐 可疑URL';
+        urlContainer.appendChild(urlTitle);
+
+        const urlList = document.createElement('div');
+        urlList.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        `;
+
+        suspiciousUrls.forEach(item => {
+            const urlCard = document.createElement('div');
+            urlCard.style.cssText = `
+                background: white;
+                border-radius: 6px;
+                padding: 12px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                border-left: 4px solid ${item.level === 'HIGH' ? '#dc3545' : '#ffc107'};
+            `;
+
+            const urlHeader = document.createElement('div');
+            urlHeader.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+            `;
+
+            const urlText = document.createElement('div');
+            urlText.style.cssText = `
+                font-size: 14px;
+                font-weight: bold;
+                color: #495057;
+                word-break: break-all;
+            `;
+            urlText.textContent = item.url;
+
+            const levelBadge = document.createElement('span');
+            levelBadge.style.cssText = `
+                background: ${item.level === 'HIGH' ? '#dc3545' : '#ffc107'};
+                color: white;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: bold;
+            `;
+            levelBadge.textContent = item.level;
+
+            urlHeader.appendChild(urlText);
+            urlHeader.appendChild(levelBadge);
+            urlCard.appendChild(urlHeader);
+
+            const urlDetails = document.createElement('div');
+            urlDetails.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 12px;
+                color: #6c757d;
+            `;
+
+            const scamProbability = document.createElement('div');
+            scamProbability.textContent = `詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%`;
+
+            const source = document.createElement('div');
+            source.textContent = `來源: ${item.source}`;
+
+            urlDetails.appendChild(scamProbability);
+            urlDetails.appendChild(source);
+            urlCard.appendChild(urlDetails);
+
+            urlList.appendChild(urlCard);
+        });
+
+        urlContainer.appendChild(urlList);
+        suspiciousSection.appendChild(urlContainer);
+    }
+
+    // 如果沒有可疑項目，顯示提示信息
+    if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
+        const noSuspiciousDiv = document.createElement('div');
+        noSuspiciousDiv.style.cssText = `
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-style: italic;
+        `;
+        noSuspiciousDiv.textContent = '未偵測到可疑的LINE ID或URL';
+        suspiciousSection.appendChild(noSuspiciousDiv);
+    }
+
+    contentArea.appendChild(suspiciousSection);
 }
 
-function extractPostAndComments(downloadPath) {
+async function extractPostAndComments(downloadPath) {
     // 取得留言
     var comment = '';
     var commentSet = new Set();  // 用來記錄已經出現過的內容
@@ -1078,7 +1533,7 @@ function extractPostAndComments(downloadPath) {
     
     // 創建顯示區域並顯示貼文內容
     createDisplayArea();
-    updateDisplay(content);
+    await updateDisplay(content);
 
     // 創建RAG任務並獲取結果
     (async () => {
@@ -1098,8 +1553,24 @@ function extractPostAndComments(downloadPath) {
 
             // 清除載入提示，並顯示 RAG 分析結果
             contentArea.innerHTML = ''; // 清空載入提示
-            updateDisplay(lastPostContent, false); // 重新顯示原始貼文
-            updateDisplay(result, true, true); // 顯示分析結果和額外內容
+            await updateDisplay(lastPostContent, false); // 重新顯示原始貼文
+            
+            // 保存分析結果到全局變量
+            lastAnalysisResult = {
+                content: result,
+                predictions: result.data.results[0].predictions
+            };
+            
+            // 保存到 storage
+            await saveData();
+            
+            displayAnalysisHeader(result); // 顯示詐騙分析結果標題和按鈕
+            // 高亮顯示證據
+            // highlightEvidenceInOriginalPost(result.data.results[0].predictions);
+            // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
+            (async () => {
+                await displayAllAnalysisResults(result.data.results[0].predictions);
+            })();
         } catch (error) {
             console.error('❌ RAG 處理過程發生錯誤:', error);
             // 顯示錯誤信息
@@ -1325,140 +1796,132 @@ function postAnalysisToFacebookComment(commentText) {
 }
 
 // 新增函數：綜合風險評分
-function displayComprehensiveRiskAssessment(predictions) {
+function displayComprehensiveRiskAssessment(predictions, data) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
 
-    // 讀取mockdata.json來獲取LINE ID和URL資訊
-    fetch(chrome.runtime.getURL('mockdata.json'))
-        .then(response => response.json())
-        .then(data => {
-            // 計算綜合評分
-            const riskLevel = calculateRiskLevel(predictions, data);
-            
-            // 創建綜合評分顯示區域
-            const riskSection = document.createElement('div');
-            riskSection.style.cssText = `
-                margin-bottom: 20px;
-                padding: 15px;
-                background: #f8f9fa;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            `;
+    // 計算綜合評分
+    const riskLevel = calculateRiskLevel(predictions, data);
+    
+    // 創建綜合評分顯示區域
+    const riskSection = document.createElement('div');
+    riskSection.style.cssText = `
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    `;
 
-            const riskTitle = document.createElement('h4');
-            riskTitle.textContent = '🎯 綜合風險評分';
-            riskTitle.style.cssText = `
-                margin: 0 0 15px 0;
-                color: #495057;
-                font-size: 18px;
-                font-weight: bold;
-                border-bottom: 2px solid #e9ecef;
-                padding-bottom: 10px;
-            `;
-            riskSection.appendChild(riskTitle);
+    const riskTitle = document.createElement('h4');
+    // riskTitle.textContent = '🎯';
+    riskTitle.style.cssText = `
+        margin: 0 0 15px 0;
+        color: #495057;
+        font-size: 18px;
+        font-weight: bold;
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 10px;
+    `;
+    riskSection.appendChild(riskTitle);
 
-            // 創建風險燈號顯示
-            const riskIndicator = document.createElement('div');
-            riskIndicator.style.cssText = `
-                display: flex;
-                align-items: center;
-                gap: 15px;
-                margin-bottom: 15px;
-            `;
+    // 創建風險燈號顯示
+    const riskIndicator = document.createElement('div');
+    riskIndicator.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 15px;
+    `;
 
-            // 風險燈號圓圈
-            const riskCircle = document.createElement('div');
-            riskCircle.style.cssText = `
-                width: 60px;
-                height: 60px;
-                border-radius: 50%;
-                background: ${getRiskColor(riskLevel)};
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 24px;
-                font-weight: bold;
-                color: white;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            `;
-            riskCircle.textContent = getRiskText(riskLevel);
-            riskIndicator.appendChild(riskCircle);
+    // 風險燈號圓圈
+    const riskCircle = document.createElement('div');
+    riskCircle.style.cssText = `
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: ${getRiskColor(riskLevel)};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: bold;
+        color: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    `;
+    riskCircle.textContent = getRiskText(riskLevel);
+    riskIndicator.appendChild(riskCircle);
 
-            // 風險等級文字
-            const riskText = document.createElement('div');
-            riskText.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                gap: 5px;
-            `;
+    // 風險等級文字
+    const riskText = document.createElement('div');
+    riskText.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    `;
 
-            const riskLevelText = document.createElement('div');
-            riskLevelText.style.cssText = `
-                font-size: 20px;
-                font-weight: bold;
-                color: ${getRiskColor(riskLevel)};
-            `;
-            riskLevelText.textContent = getRiskLevelText(riskLevel);
-            riskText.appendChild(riskLevelText);
+    const riskLevelText = document.createElement('div');
+    riskLevelText.style.cssText = `
+        font-size: 20px;
+        font-weight: bold;
+        color: ${getRiskColor(riskLevel)};
+    `;
+    riskLevelText.textContent = getRiskLevelText(riskLevel);
+    riskText.appendChild(riskLevelText);
 
-            const riskDescription = document.createElement('div');
-            riskDescription.style.cssText = `
-                font-size: 14px;
-                color: #6c757d;
-            `;
-            riskDescription.textContent = getRiskDescription(riskLevel);
-            riskText.appendChild(riskDescription);
+    const riskDescription = document.createElement('div');
+    riskDescription.style.cssText = `
+        font-size: 14px;
+        color: #6c757d;
+    `;
+    riskDescription.textContent = getRiskDescription(riskLevel);
+    riskText.appendChild(riskDescription);
 
-            riskIndicator.appendChild(riskText);
-            riskSection.appendChild(riskIndicator);
+    riskIndicator.appendChild(riskText);
+    riskSection.appendChild(riskIndicator);
 
-            // 顯示評分依據
-            const criteriaSection = document.createElement('div');
-            criteriaSection.style.cssText = `
-                background: white;
-                border-radius: 6px;
-                padding: 12px;
-                margin-top: 10px;
-            `;
+    // 顯示評分依據
+    const criteriaSection = document.createElement('div');
+    criteriaSection.style.cssText = `
+        background: white;
+        border-radius: 6px;
+        padding: 12px;
+        margin-top: 10px;
+    `;
 
-            const criteriaTitle = document.createElement('div');
-            criteriaTitle.style.cssText = `
-                font-size: 14px;
-                font-weight: bold;
-                color: #495057;
-                margin-bottom: 8px;
-            `;
-            criteriaTitle.textContent = '評分依據：';
-            criteriaSection.appendChild(criteriaTitle);
+    const criteriaTitle = document.createElement('div');
+    criteriaTitle.style.cssText = `
+        font-size: 14px;
+        font-weight: bold;
+        color: #495057;
+        margin-bottom: 8px;
+    `;
+    criteriaTitle.textContent = '評分依據：';
+    criteriaSection.appendChild(criteriaTitle);
 
-            // 獲取評分依據
-            const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
-            const hasFraudType = predictions.length > 0;
-            const highestUrlLevel = getHighestUrlLevel(data.url_details);
+    // 獲取評分依據
+    const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
+    const hasFraudType = predictions.length > 0;
+    const highestUrlLevel = getHighestUrlLevel(data.url_details);
 
-            const criteriaList = document.createElement('div');
-            criteriaList.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                gap: 5px;
-                font-size: 12px;
-                color: #6c757d;
-            `;
+    const criteriaList = document.createElement('div');
+    criteriaList.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        font-size: 12px;
+        color: #6c757d;
+    `;
 
-            criteriaList.innerHTML = `
-                <div>• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}</div>
-                <div>• 詐騙類型: ${hasFraudType ? '有' : '無'}</div>
-                <div>• 最高URL風險等級: ${highestUrlLevel}</div>
-            `;
-            criteriaSection.appendChild(criteriaList);
-            riskSection.appendChild(criteriaSection);
+    criteriaList.innerHTML = `
+        <div>• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}</div>
+        <div>• 詐騙類型: ${hasFraudType ? '有' : '無'}</div>
+        <div>• 最高URL風險等級: ${highestUrlLevel}</div>
+    `;
+    criteriaSection.appendChild(criteriaList);
+    riskSection.appendChild(criteriaSection);
 
-            contentArea.appendChild(riskSection);
-        })
-        .catch(error => {
-            console.error('讀取mockdata.json失敗:', error);
-        });
+    contentArea.appendChild(riskSection);
 }
 
 // 計算風險等級
@@ -1549,39 +2012,312 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (message.action === 'view_results') {
         // 顯示分析結果
         createDisplayArea();
-        if (lastPostContent && lastAnalysisResult) {
-            // 先清空內容區域，避免重複顯示
-            const contentArea = document.getElementById('fb-analyzer-content');
-            if (contentArea) {
-                contentArea.innerHTML = '';
-            }
+        
+        // 等待數據載入完成
+        (async () => {
+            // 確保數據已載入
+            await loadSavedData();
             
-            // 先顯示原始貼文內容
-            updateDisplay(lastPostContent, false);
-            // 再顯示分析結果（不顯示額外內容）
-            updateDisplay(lastAnalysisResult.content, true, false);
-            // 重新高亮顯示證據
-            highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
-            // 顯示可疑項目
-            displaySuspiciousItems();
-            // 顯示綜合評分
-            displayComprehensiveRiskAssessment(lastAnalysisResult.predictions);
-        } else {
-            // 如果沒有分析結果，顯示提示信息
-            const contentArea = document.getElementById('fb-analyzer-content');
-            if (contentArea) {
-                const messageDiv = document.createElement('div');
-                messageDiv.style.cssText = `
-                    padding: 10px;
-                    background-color: #fff3cd;
-                    color: #856404;
-                    border-radius: 4px;
-                    margin-bottom: 10px;
-                `;
-                messageDiv.textContent = '尚未進行分析，請先點擊「分析貼文」按鈕';
-                contentArea.appendChild(messageDiv);
+            console.log('view_results - lastPostContent:', lastPostContent);
+            console.log('view_results - lastAnalysisResult:', lastAnalysisResult);
+            
+            if (lastPostContent && lastAnalysisResult) {
+                console.log('找到保存的數據，開始顯示結果');
+                // 先清空內容區域，避免重複顯示
+                const contentArea = document.getElementById('fb-analyzer-content');
+                if (contentArea) {
+                    contentArea.innerHTML = '';
+                }
+                
+                // 清理舊的高亮效果
+                cleanupOldHighlights();
+                
+                // 先顯示原始貼文內容
+                await updateDisplay(lastPostContent, false);
+                
+                // 顯示詐騙分析結果標題和按鈕
+                displayAnalysisHeader(lastAnalysisResult.content);
+                
+                // 重新高亮顯示證據
+                // highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
+                
+                // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
+                (async () => {
+                    await displayAllAnalysisResults(lastAnalysisResult.predictions);
+                })();
+            } else {
+                console.log('沒有找到保存的數據，顯示提示信息');
+                // 如果沒有分析結果，顯示提示信息
+                const contentArea = document.getElementById('fb-analyzer-content');
+                if (contentArea) {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.style.cssText = `
+                        padding: 10px;
+                        background-color: #fff3cd;
+                        color: #856404;
+                        border-radius: 4px;
+                        margin-bottom: 10px;
+                    `;
+                    messageDiv.textContent = '尚未進行分析，請先點擊「分析貼文」按鈕';
+                    contentArea.appendChild(messageDiv);
+                }
             }
-        }
+        })();
+        
         sendResponse({ status: 'success' });
     }
 });
+
+// 新增函數：顯示詐騙分析結果標題和按鈕
+function displayAnalysisHeader(content) {
+    const contentArea = document.getElementById('fb-analyzer-content');
+    if (!contentArea) return;
+
+    const section = document.createElement('div');
+    section.style.cssText = `
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    `;
+
+    const title = document.createElement('h4');
+    title.textContent = '詐騙分析結果';
+    title.style.cssText = `
+        margin: 0 0 15px 0;
+        color: #1877f2;
+        font-size: 18px;
+        font-weight: bold;
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    `;
+
+    // 添加複製按鈕
+    const copyButton = document.createElement('button');
+    copyButton.textContent = '複製分析結果';
+    copyButton.style.cssText = `
+        background-color: #1877f2;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    `;
+    copyButton.onmouseover = () => {
+        copyButton.style.backgroundColor = '#166fe5';
+    };
+    copyButton.onmouseout = () => {
+        copyButton.style.backgroundColor = '#1877f2';
+    };
+    copyButton.onclick = () => {
+        // 格式化完整的分析結果
+        const predictions = content.data.results[0].predictions;
+        let formattedText = '詐騙分析結果\n\n';
+        
+        // 1. 綜合風險評分
+        // formattedText += '🎯 綜合風險評分\n';
+        // formattedText += '================\n';
+        
+        // 讀取mockdata.json來獲取風險評分
+        fetch(chrome.runtime.getURL('mockdata.json'))
+            .then(response => response.json())
+            .then(data => {
+                const riskLevel = calculateRiskLevel(predictions, data);
+                formattedText += `風險等級：${getRiskLevelText(riskLevel)}\n`;
+                formattedText += `風險描述：${getRiskDescription(riskLevel)}\n\n`;
+                
+                // 評分依據
+                const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
+                const hasFraudType = predictions.length > 0;
+                const highestUrlLevel = getHighestUrlLevel(data.url_details);
+                
+                formattedText += '評分依據：\n';
+                formattedText += `• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}\n`;
+                formattedText += `• 詐騙類型: ${hasFraudType ? '有' : '無'}\n`;
+                formattedText += `• 最高URL風險等級: ${highestUrlLevel}\n\n`;
+                
+                // 2. 可疑項目
+                // formattedText += '🔍\n';
+                // formattedText += '====================\n';
+                
+                // 可疑LINE ID
+                const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
+                if (suspiciousLineIds.length > 0) {
+                    formattedText += '📱 可疑LINE ID：\n';
+                    suspiciousLineIds.forEach(item => {
+                        formattedText += `• ${item.id}\n`;
+                    });
+                    formattedText += '\n';
+                }
+                
+                // 可疑URL
+                const suspiciousUrls = data.url_details.filter(item => 
+                    item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
+                );
+                if (suspiciousUrls.length > 0) {
+                    formattedText += '🌐 可疑URL：\n';
+                    suspiciousUrls.forEach(item => {
+                        formattedText += `• ${item.url} (${item.level}, 詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%)\n`;
+                    });
+                    formattedText += '\n';
+                }
+                
+                if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
+                    formattedText += '未偵測到可疑的LINE ID或URL\n\n';
+                }
+                
+                // 3. 詐騙類型
+                formattedText += '⚠️ 詐騙類型分析\n';
+                formattedText += '================\n';
+                
+                if (predictions.length === 0) {
+                    formattedText += '未偵測到詐騙類型\n';
+                } else {
+                    predictions.forEach((prediction, index) => {
+                        formattedText += `詐騙類型：${prediction.ref_text}\n`;
+                        formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
+                        formattedText += '發現的證據：\n';
+                        prediction.evidences.forEach((evidence, i) => {
+                            formattedText += `${i + 1}. ${evidence}\n`;
+                        });
+                        formattedText += '\n';
+                    });
+                }
+
+                // 複製到剪貼簿
+                navigator.clipboard.writeText(formattedText).then(() => {
+                    // 顯示複製成功提示
+                    const originalText = copyButton.textContent;
+                    copyButton.textContent = '已複製！';
+                    copyButton.style.backgroundColor = '#28a745';
+                    setTimeout(() => {
+                        copyButton.textContent = originalText;
+                        copyButton.style.backgroundColor = '#1877f2';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('複製失敗:', err);
+                    copyButton.textContent = '複製失敗';
+                    copyButton.style.backgroundColor = '#dc3545';
+                    setTimeout(() => {
+                        copyButton.textContent = '複製分析結果';
+                        copyButton.style.backgroundColor = '#1877f2';
+                    }, 2000);
+                });
+            })
+            .catch(error => {
+                console.error('讀取mockdata.json失敗:', error);
+                // 如果讀取失敗，只複製詐騙類型
+                formattedText += '⚠️ 詐騙類型分析\n';
+                formattedText += '================\n';
+                
+                if (predictions.length === 0) {
+                    formattedText += '未偵測到詐騙類型\n';
+                } else {
+                    predictions.forEach((prediction, index) => {
+                        formattedText += `詐騙類型：${prediction.ref_text}\n`;
+                        formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
+                        formattedText += '發現的證據：\n';
+                        prediction.evidences.forEach((evidence, i) => {
+                            formattedText += `${i + 1}. ${evidence}\n`;
+                        });
+                        formattedText += '\n';
+                    });
+                }
+
+                // 複製到剪貼簿
+                navigator.clipboard.writeText(formattedText).then(() => {
+                    const originalText = copyButton.textContent;
+                    copyButton.textContent = '已複製！';
+                    copyButton.style.backgroundColor = '#28a745';
+                    setTimeout(() => {
+                        copyButton.textContent = originalText;
+                        copyButton.style.backgroundColor = '#1877f2';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('複製失敗:', err);
+                    copyButton.textContent = '複製失敗';
+                    copyButton.style.backgroundColor = '#dc3545';
+                    setTimeout(() => {
+                        copyButton.textContent = '複製分析結果';
+                        copyButton.style.backgroundColor = '#1877f2';
+                    }, 2000);
+                });
+            });
+    };
+    title.appendChild(copyButton);
+
+    // // Create Post Comment button
+    // const postCommentButton = document.createElement('button');
+    // postCommentButton.textContent = '自動留言分析結果';
+    // postCommentButton.id = 'postCommentButton';
+    // postCommentButton.style.cssText = `
+    //     background-color: #1877f2;
+    //     color: white;
+    //     border: none;
+    //     padding: 6px 12px;
+    //     border-radius: 4px;
+    //     font-size: 14px;
+    //     cursor: pointer;
+    //     transition: background-color 0.2s;
+    //     margin-left: 8px; 
+    // `;
+    // postCommentButton.onmouseover = () => {
+    //     postCommentButton.style.backgroundColor = '#166fe5';
+    // };
+    // postCommentButton.onmouseout = () => {
+    //     postCommentButton.style.backgroundColor = '#1877f2';
+    // };
+    // postCommentButton.addEventListener('click', () => {
+    //     if (lastAnalysisResult && lastAnalysisResult.predictions) {
+    //         const commentText = generateCommentText(lastAnalysisResult.predictions);
+    //         postAnalysisToFacebookComment(commentText);
+    //         // Optional: Change button text to "Posting..." or disable it
+    //         postCommentButton.textContent = '處理中...';
+    //         postCommentButton.disabled = true;
+    //         setTimeout(() => { // Reset button after a delay
+    //             postCommentButton.textContent = '自動留言分析結果';
+    //             postCommentButton.disabled = false;
+    //         }, 3000); // Reset after 3 seconds
+    //     } else {
+    //         console.error('No analysis result available to post.');
+    //         alert('沒有可用的分析結果來留言。請先執行分析。');
+    //     }
+    // });
+    // title.appendChild(postCommentButton);
+
+    section.appendChild(title);
+    contentArea.appendChild(section);
+}
+
+// 新增函數：統一處理所有顯示，確保正確順序
+async function displayAllAnalysisResults(predictions) {
+    const contentArea = document.getElementById('fb-analyzer-content');
+    if (!contentArea) return;
+
+    try {
+        // 讀取mockdata.json
+        const response = await fetch(chrome.runtime.getURL('mockdata.json'));
+        const data = await response.json();
+
+        // 1. 綜合風險評分
+        await displayComprehensiveRiskAssessment(predictions, data);
+        
+        // 2. 可疑項目
+        await displaySuspiciousItems(data);
+        
+        // 3. 詐騙類型
+        displayFraudTypes(predictions);
+    } catch (error) {
+        console.error('讀取mockdata.json失敗:', error);
+        // 如果讀取失敗，只顯示詐騙類型
+        displayFraudTypes(predictions);
+    }
+}
+
+// 修改 displayComprehensiveRiskAssessment 函數，接受 data 參數

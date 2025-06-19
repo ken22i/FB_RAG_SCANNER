@@ -3,7 +3,7 @@
   "name": "Facebook Post Analyzer",
   "version": "1.2.3",
   "description": "用於分析 Facebook 貼文內容，並提供智能分析結果。該擴充功能使用 RAG (Retrieval-Augmented Generation) 技術來分析貼文內容，並在原始貼文中標記相關證據。",
-  "permissions": ["scripting", "downloads", "activeTab"],
+  "permissions": ["scripting", "downloads", "activeTab", "storage"],
   "host_permissions": ["https://www.facebook.com/*"],
   "background": {
     "service_worker": "background.js"

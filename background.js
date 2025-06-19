@@ -1,6 +1,9 @@
 const API_BASE_URL = 'http://192.168.70.88:8000/api/v1/rag';
 const AUTH_HEADER = 'Basic ' + btoa('user:systemadmin!23');
 
+// 第二個API的配置
+const API_BASE_URL_2 = 'http://192.168.70.88:8001/analyze';
+
 const referenceData = {
     "level1": [
         {
@@ -167,6 +170,50 @@ async function checkRAGStatus(jobId) {
     return data;
 }
 
+// 新增函數：調用第二個API進行分析
+async function analyzeWithSecondAPI(description) {
+    console.log('🚀 開始調用第二個API進行分析');
+    
+    // 暫時使用mockdata作為測試數據
+    // TODO: 當後端API準備好後，取消註釋下面的代碼並註釋mockdata部分
+    
+    /*
+    const requestData = {
+        "description": description
+    };
+
+    console.log('📤 發送第二個API請求:', API_BASE_URL_2);
+    const response = await fetch(API_BASE_URL_2, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+    });
+
+    if (!response.ok) {
+        console.error('❌ 第二個API請求失敗:', response.status, response.statusText);
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('📥 第二個API響應:', data);
+    return data;
+    */
+    
+    // 暫時返回mockdata作為測試數據
+    console.log('📤 使用mockdata作為測試數據');
+    try {
+        const response = await fetch(chrome.runtime.getURL('mockdata.json'));
+        const mockData = await response.json();
+        console.log('📥 返回mockdata:', mockData);
+        return mockData;
+    } catch (error) {
+        console.error('❌ 讀取mockdata失敗:', error);
+        throw error;
+    }
+}
+
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('📨 收到消息:', message.action);
@@ -203,6 +250,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })
             .catch(error => {
                 console.error('❌ 檢查狀態失敗:', error);
+                sendResponse({ error: error.message });
+            });
+        return true;
+    }
+    else if (message.action === 'analyzeWithSecondAPI') {
+        analyzeWithSecondAPI(message.description)
+            .then(response => {
+                console.log('✅ 第二個API分析成功:', response);
+                sendResponse(response);
+            })
+            .catch(error => {
+                console.error('❌ 第二個API分析失敗:', error);
                 sendResponse({ error: error.message });
             });
         return true;
