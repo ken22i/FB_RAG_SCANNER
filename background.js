@@ -1,9 +1,9 @@
 const API_BASE_URL = 'http://192.168.70.88:8000/api/v1/rag';
 const AUTH_HEADER = 'Basic ' + btoa('user:systemadmin!23');
 
-// 第二個API的配置
+// URL LINE ID API的配置
 const API_BASE_URL_2 = 'http://192.168.70.88:8001/analyze';
-
+// const API_BASE_URL_2 = 'https://781c-101-10-164-19.ngrok-free.app/analyze';
 const referenceData = {
     "level1": [
         {
@@ -172,17 +172,17 @@ async function checkRAGStatus(jobId) {
 
 // 新增函數：調用第二個API進行分析
 async function analyzeWithSecondAPI(description) {
-    console.log('🚀 開始調用第二個API進行分析');
+    console.log('🚀 開始調用URL LINE ID API進行分析');
     
     // 暫時使用mockdata作為測試數據
     // TODO: 當後端API準備好後，取消註釋下面的代碼並註釋mockdata部分
     
-    /*
+    
     const requestData = {
         "description": description
     };
 
-    console.log('📤 發送第二個API請求:', API_BASE_URL_2);
+    console.log('📤 發送URL LINE ID API請求:', API_BASE_URL_2, requestData);
     const response = await fetch(API_BASE_URL_2, {
         method: 'POST',
         headers: {
@@ -192,31 +192,31 @@ async function analyzeWithSecondAPI(description) {
     });
 
     if (!response.ok) {
-        console.error('❌ 第二個API請求失敗:', response.status, response.statusText);
+        console.error('❌ URL LINE ID API請求失敗:', response.status, response.statusText);
         throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('📥 第二個API響應:', data);
+    console.log('📥 URL LINE ID API響應:', data);
     return data;
-    */
+    
     
     // 暫時返回mockdata作為測試數據
-    console.log('📤 使用mockdata作為測試數據');
-    try {
-        const response = await fetch(chrome.runtime.getURL('mockdata.json'));
-        const mockData = await response.json();
-        console.log('📥 返回mockdata:', mockData);
-        return mockData;
-    } catch (error) {
-        console.error('❌ 讀取mockdata失敗:', error);
-        throw error;
-    }
+    // console.log('📤 使用mockdata作為測試數據');
+    // try {
+    //     const response = await fetch(chrome.runtime.getURL('mockdata.json'));
+    //     const mockData = await response.json();
+    //     console.log('📥 返回mockdata:', mockData);
+    //     return mockData;
+    // } catch (error) {
+    //     console.error('❌ 讀取mockdata失敗:', error);
+    //     throw error;
+    // }
 }
 
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('📨 收到消息:', message.action);
+    console.log('📨 收到消息:', message.action, message);
     
     if (message.action === 'createRAGTask') {
         createRAGTask(message.postText)

@@ -1,11 +1,13 @@
 // 添加全局變量來存儲分析結果和原始貼文內容
 let lastAnalysisResult = null;
 let lastPostContent = null;
+// 添加全局變量來存儲可疑資料
+let lastSuspiciousData = null;
 
 // 從 storage 中載入保存的數據
 async function loadSavedData() {
     try {
-        const result = await chrome.storage.local.get(['lastAnalysisResult', 'lastPostContent']);
+        const result = await chrome.storage.local.get(['lastAnalysisResult', 'lastPostContent', 'lastSuspiciousData']);
         if (result.lastAnalysisResult) {
             lastAnalysisResult = result.lastAnalysisResult;
             console.log('已從 storage 載入分析結果');
@@ -13,6 +15,10 @@ async function loadSavedData() {
         if (result.lastPostContent) {
             lastPostContent = result.lastPostContent;
             console.log('已從 storage 載入貼文內容');
+        }
+        if (result.lastSuspiciousData) {
+            lastSuspiciousData = result.lastSuspiciousData;
+            console.log('已從 storage 載入可疑資料');
         }
     } catch (error) {
         console.error('載入保存的數據失敗:', error);
@@ -25,10 +31,11 @@ async function saveData() {
         console.log('開始保存數據到 storage');
         console.log('lastAnalysisResult:', lastAnalysisResult);
         console.log('lastPostContent:', lastPostContent);
-        
+        console.log('lastSuspiciousData:', lastSuspiciousData);
         await chrome.storage.local.set({
             lastAnalysisResult: lastAnalysisResult,
-            lastPostContent: lastPostContent
+            lastPostContent: lastPostContent,
+            lastSuspiciousData: lastSuspiciousData
         });
         console.log('已保存數據到 storage');
     } catch (error) {
@@ -877,181 +884,119 @@ async function updateDisplay(content, isRAGResult = false, showAdditionalContent
         copyButton.onmouseout = () => {
             copyButton.style.backgroundColor = '#1877f2';
         };
-        copyButton.onclick = () => {
-            // 格式化完整的分析結果
+        copyButton.onclick = async () => {
             const predictions = content.data.results[0].predictions;
             let formattedText = '詐騙分析結果\n\n';
-            
-            // 1. 綜合風險評分
-            // formattedText += '🎯\n';
-            // formattedText += '================\n';
-            
-            // 讀取mockdata.json來獲取風險評分
-            fetch(chrome.runtime.getURL('mockdata.json'))
-                .then(response => response.json())
-                .then(data => {
-                    const riskLevel = calculateRiskLevel(predictions, data);
-                    formattedText += `風險等級：${getRiskLevelText(riskLevel)}\n`;
-                    formattedText += `風險描述：${getRiskDescription(riskLevel)}\n\n`;
-                    
-                    // 評分依據
-                    const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
-                    const hasFraudType = predictions.length > 0;
-                    const highestUrlLevel = getHighestUrlLevel(data.url_details);
-                    
-                    formattedText += '評分依據：\n';
-                    formattedText += `• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}\n`;
-                    formattedText += `• 詐騙類型: ${hasFraudType ? '有' : '無'}\n`;
-                    formattedText += `• 最高URL風險等級: ${highestUrlLevel}\n\n`;
-                    
-                    // 2. 可疑項目
-                    // formattedText += '🔍\n';
-                    // formattedText += '====================\n';
-                    
-                    // 可疑LINE ID
-                    const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
-                    if (suspiciousLineIds.length > 0) {
-                        formattedText += '📱 可疑LINE ID：\n';
-                        suspiciousLineIds.forEach(item => {
-                            formattedText += `• ${item.id}\n`;
+            try {
+                // 取得 API 回傳資料
+                const data = await getSuspiciousData(lastPostContent);
+                const riskLevel = calculateRiskLevel(predictions, data);
+                formattedText += `風險等級：${getRiskLevelText(riskLevel)}\n`;
+                formattedText += `風險描述：${getRiskDescription(riskLevel)}\n\n`;
+                const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
+                const hasFraudType = predictions.length > 0 && !isNoFraudDetected(predictions);
+                const highestUrlLevel = getHighestUrlLevel(data.url_details);
+                formattedText += '評分依據：\n';
+                formattedText += `• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}\n`;
+                formattedText += `• 詐騙類型: ${hasFraudType ? '有' : '無'}\n`;
+                formattedText += `• 最高URL風險等級: ${highestUrlLevel}\n\n`;
+                // 2. 可疑項目
+                const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
+                if (suspiciousLineIds.length > 0) {
+                    formattedText += '📱 可疑LINE ID：\n';
+                    suspiciousLineIds.forEach(item => {
+                        formattedText += `• ${item.id}\n`;
+                    });
+                    formattedText += '\n';
+                }
+                const suspiciousUrls = data.url_details.filter(item => 
+                    item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
+                );
+                if (suspiciousUrls.length > 0) {
+                    formattedText += '🌐 可疑URL：\n';
+                    suspiciousUrls.forEach(item => {
+                        formattedText += `• ${item.url} (${item.level}, 詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%)\n`;
+                    });
+                    formattedText += '\n';
+                }
+                if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
+                    formattedText += '未偵測到可疑的LINE ID或URL\n\n';
+                }
+                // 3. 詐騙類型
+                formattedText += '⚠️ 詐騙類型分析\n';
+                formattedText += '================\n';
+                if (isNoFraudDetected(predictions)) {
+                    formattedText += '未偵測到詐騙類型\n';
+                } else {
+                    predictions.forEach((prediction, index) => {
+                        if (!prediction.ref_text) return;
+                        formattedText += `詐騙類型：${prediction.ref_text}\n`;
+                        formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
+                        formattedText += '發現的證據：\n';
+                        prediction.evidences.forEach((evidence, i) => {
+                            formattedText += `${i + 1}. ${evidence}\n`;
                         });
                         formattedText += '\n';
-                    }
-                    
-                    // 可疑URL
-                    const suspiciousUrls = data.url_details.filter(item => 
-                        item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
-                    );
-                    if (suspiciousUrls.length > 0) {
-                        formattedText += '🌐 可疑URL：\n';
-                        suspiciousUrls.forEach(item => {
-                            formattedText += `• ${item.url} (${item.level}, 詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%)\n`;
-                        });
-                        formattedText += '\n';
-                    }
-                    
-                    if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
-                        formattedText += '未偵測到可疑的LINE ID或URL\n\n';
-                    }
-                    
-                    // 3. 詐騙類型
-                    formattedText += '⚠️ 詐騙類型分析\n';
-                    formattedText += '================\n';
-                    
-                    if (predictions.length === 0) {
-                        formattedText += '未偵測到詐騙類型\n';
-                    } else {
-                        predictions.forEach((prediction, index) => {
-                            formattedText += `詐騙類型：${prediction.ref_text}\n`;
-                            formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
-                            formattedText += '發現的證據：\n';
-                            prediction.evidences.forEach((evidence, i) => {
-                                formattedText += `${i + 1}. ${evidence}\n`;
-                            });
-                            formattedText += '\n';
-                        });
-                    }
-
-                    // 複製到剪貼簿
-                    navigator.clipboard.writeText(formattedText).then(() => {
-                        // 顯示複製成功提示
-                        const originalText = copyButton.textContent;
-                        copyButton.textContent = '已複製！';
-                        copyButton.style.backgroundColor = '#28a745';
-                        setTimeout(() => {
-                            copyButton.textContent = originalText;
-                            copyButton.style.backgroundColor = '#1877f2';
-                        }, 2000);
-                    }).catch(err => {
-                        console.error('複製失敗:', err);
-                        copyButton.textContent = '複製失敗';
-                        copyButton.style.backgroundColor = '#dc3545';
-                        setTimeout(() => {
-                            copyButton.textContent = '複製分析結果';
-                            copyButton.style.backgroundColor = '#1877f2';
-                        }, 2000);
                     });
-                })
-                .catch(error => {
-                    console.error('讀取mockdata.json失敗:', error);
-                    // 如果讀取失敗，只複製詐騙類型
-                    formattedText += '⚠️ 詐騙類型分析\n';
-                    formattedText += '================\n';
-                    
-                    if (predictions.length === 0) {
-                        formattedText += '未偵測到詐騙類型\n';
-                    } else {
-                        predictions.forEach((prediction, index) => {
-                            formattedText += `詐騙類型：${prediction.ref_text}\n`;
-                            formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
-                            formattedText += '發現的證據：\n';
-                            prediction.evidences.forEach((evidence, i) => {
-                                formattedText += `${i + 1}. ${evidence}\n`;
-                            });
-                            formattedText += '\n';
-                        });
-                    }
-
-                    // 複製到剪貼簿
-                    navigator.clipboard.writeText(formattedText).then(() => {
-                        const originalText = copyButton.textContent;
-                        copyButton.textContent = '已複製！';
-                        copyButton.style.backgroundColor = '#28a745';
-                        setTimeout(() => {
-                            copyButton.textContent = originalText;
-                            copyButton.style.backgroundColor = '#1877f2';
-                        }, 2000);
-                    }).catch(err => {
-                        console.error('複製失敗:', err);
-                        copyButton.textContent = '複製失敗';
-                        copyButton.style.backgroundColor = '#dc3545';
-                        setTimeout(() => {
-                            copyButton.textContent = '複製分析結果';
-                            copyButton.style.backgroundColor = '#1877f2';
-                        }, 2000);
-                    });
-                });
+                }
+                await navigator.clipboard.writeText(formattedText);
+                const originalText = copyButton.textContent;
+                copyButton.textContent = '已複製！';
+                copyButton.style.backgroundColor = '#28a745';
+                setTimeout(() => {
+                    copyButton.textContent = originalText;
+                    copyButton.style.backgroundColor = '#1877f2';
+                }, 2000);
+            } catch (error) {
+                console.error('複製分析結果失敗:', error);
+                copyButton.textContent = '複製失敗';
+                copyButton.style.backgroundColor = '#dc3545';
+                setTimeout(() => {
+                    copyButton.textContent = '複製分析結果';
+                    copyButton.style.backgroundColor = '#1877f2';
+                }, 2000);
+            }
         };
         title.appendChild(copyButton);
 
         // Create Post Comment button
-        const postCommentButton = document.createElement('button');
-        postCommentButton.textContent = '自動留言分析結果';
-        postCommentButton.id = 'postCommentButton';
-        postCommentButton.style.cssText = `
-            background-color: #1877f2;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            margin-left: 8px; 
-        `;
-        postCommentButton.onmouseover = () => {
-            postCommentButton.style.backgroundColor = '#166fe5';
-        };
-        postCommentButton.onmouseout = () => {
-            postCommentButton.style.backgroundColor = '#1877f2';
-        };
-        postCommentButton.addEventListener('click', () => {
-            if (lastAnalysisResult && lastAnalysisResult.predictions) {
-                const commentText = generateCommentText(lastAnalysisResult.predictions);
-                postAnalysisToFacebookComment(commentText);
-                // Optional: Change button text to "Posting..." or disable it
-                postCommentButton.textContent = '處理中...';
-                postCommentButton.disabled = true;
-                setTimeout(() => { // Reset button after a delay
-                    postCommentButton.textContent = '自動留言分析結果';
-                    postCommentButton.disabled = false;
-                }, 3000); // Reset after 3 seconds
-            } else {
-                console.error('No analysis result available to post.');
-                alert('沒有可用的分析結果來留言。請先執行分析。');
-            }
-        });
-        title.appendChild(postCommentButton);
+        // const postCommentButton = document.createElement('button');
+        // postCommentButton.textContent = '自動留言分析結果';
+        // postCommentButton.id = 'postCommentButton';
+        // postCommentButton.style.cssText = `
+        //     background-color: #1877f2;
+        //     color: white;
+        //     border: none;
+        //     padding: 6px 12px;
+        //     border-radius: 4px;
+        //     font-size: 14px;
+        //     cursor: pointer;
+        //     transition: background-color 0.2s;
+        //     margin-left: 8px; 
+        // `;
+        // postCommentButton.onmouseover = () => {
+        //     postCommentButton.style.backgroundColor = '#166fe5';
+        // };
+        // postCommentButton.onmouseout = () => {
+        //     postCommentButton.style.backgroundColor = '#1877f2';
+        // };
+        // postCommentButton.addEventListener('click', () => {
+        //     if (lastAnalysisResult && lastAnalysisResult.predictions) {
+        //         const commentText = generateCommentText(lastAnalysisResult.predictions);
+        //         postAnalysisToFacebookComment(commentText);
+        //         // Optional: Change button text to "Posting..." or disable it
+        //         postCommentButton.textContent = '處理中...';
+        //         postCommentButton.disabled = true;
+        //         setTimeout(() => { // Reset button after a delay
+        //             postCommentButton.textContent = '自動留言分析結果';
+        //             postCommentButton.disabled = false;
+        //         }, 3000); // Reset after 3 seconds
+        //     } else {
+        //         console.error('No analysis result available to post.');
+        //         alert('沒有可用的分析結果來留言。請先執行分析。');
+        //     }
+        // });
+        // title.appendChild(postCommentButton);
     }
     section.appendChild(title);
 
@@ -1083,8 +1028,23 @@ async function updateDisplay(content, isRAGResult = false, showAdditionalContent
         if (showAdditionalContent) {
             // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
             (async () => {
-                await displayAllAnalysisResults(predictions);
+                await displayAllAnalysisResults(predictions, lastPostContent);
             })();
+        }
+        // 新增：如果無偵測到詐騙類型，顯示提示
+        if (isNoFraudDetected(predictions)) {
+            const noFraudDiv = document.createElement('div');
+            noFraudDiv.style.cssText = `
+                text-align: center;
+                padding: 20px;
+                color: #28a745;
+                font-style: italic;
+                background: white;
+                border-radius: 6px;
+                margin-top: 10px;
+            `;
+            noFraudDiv.textContent = '未偵測到詐騙類型';
+            contentArea.appendChild(noFraudDiv);
         }
     } else {
         contentDiv.textContent = content;
@@ -1104,6 +1064,44 @@ async function updateDisplay(content, isRAGResult = false, showAdditionalContent
 function displayFraudTypes(predictions) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
+
+    // 新增：判斷 predictions 是否為有效陣列且有內容，或為無偵測到詐騙類型
+    if (isNoFraudDetected(predictions)) {
+        const fraudSection = document.createElement('div');
+        fraudSection.style.cssText = `
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        `;
+        const fraudTitle = document.createElement('h4');
+        fraudTitle.textContent = '⚠️ 詐騙類型分析';
+        fraudTitle.style.cssText = `
+            margin: 0 0 15px 0;
+            color: #dc3545;
+            font-size: 18px;
+            font-weight: bold;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 10px;
+        `;
+        fraudSection.appendChild(fraudTitle);
+
+        const noFraudDiv = document.createElement('div');
+        noFraudDiv.style.cssText = `
+            text-align: center;
+            padding: 20px;
+            color: #28a745;
+            font-style: italic;
+            background: white;
+            border-radius: 6px;
+        `;
+        noFraudDiv.textContent = '未偵測到詐騙類型';
+        fraudSection.appendChild(noFraudDiv);
+
+        contentArea.appendChild(fraudSection);
+        return;
+    }
 
     // 創建詐騙類型顯示區域
     const fraudSection = document.createElement('div');
@@ -1127,133 +1125,118 @@ function displayFraudTypes(predictions) {
     `;
     fraudSection.appendChild(fraudTitle);
 
-    if (predictions.length === 0) {
-        const noFraudDiv = document.createElement('div');
-        noFraudDiv.style.cssText = `
-            text-align: center;
-            padding: 20px;
-            color: #28a745;
-            font-style: italic;
+    // 創建詐騙類型容器
+    const fraudContainer = document.createElement('div');
+    fraudContainer.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    `;
+
+    // 處理每個預測結果（只顯示 ref_text 存在的）
+    predictions.forEach((prediction, index) => {
+        if (!prediction.ref_text) return; // 跳過沒有 ref_text 的
+        const predictionCard = document.createElement('div');
+        predictionCard.style.cssText = `
             background: white;
-            border-radius: 6px;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         `;
-        noFraudDiv.textContent = '未偵測到詐騙類型';
-        fraudSection.appendChild(noFraudDiv);
-    } else {
-        // 創建詐騙類型容器
-        const fraudContainer = document.createElement('div');
-        fraudContainer.style.cssText = `
+
+        // 詐騙類型標題
+        const scamTypeContainer = document.createElement('div');
+        scamTypeContainer.style.cssText = `
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 10px;
+        `;
+
+        const iconTextGroup = document.createElement('div');
+        iconTextGroup.style.cssText = `
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            align-items: center;
+            color: #dc3545;
         `;
 
-        // 處理每個預測結果
-        predictions.forEach((prediction, index) => {
-            const predictionCard = document.createElement('div');
-            predictionCard.style.cssText = `
-                background: white;
-                border-radius: 8px;
-                padding: 15px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            `;
+        const warningIcon = document.createElement('span');
+        warningIcon.textContent = '⚠';
+        warningIcon.style.cssText = `
+            font-size: 28px;
+            line-height: 1;
+        `;
+        iconTextGroup.appendChild(warningIcon);
+        scamTypeContainer.appendChild(iconTextGroup);
 
-            // 詐騙類型標題
-            const scamTypeContainer = document.createElement('div');
-            scamTypeContainer.style.cssText = `
-                display: flex;
-                align-items: flex-start;
-                gap: 10px;
-                margin-bottom: 10px;
-            `;
+        const scamTypeText = document.createElement('div');
+        scamTypeText.style.cssText = `
+            font-size: 18px;
+            font-weight: bold;
+            color: #dc3545;
+        `;
+        scamTypeText.textContent = `詐騙類型：${prediction.ref_text}`;
+        scamTypeContainer.appendChild(scamTypeText);
 
-            const iconTextGroup = document.createElement('div');
-            iconTextGroup.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                color: #dc3545;
-            `;
+        predictionCard.appendChild(scamTypeContainer);
 
-            const warningIcon = document.createElement('span');
-            warningIcon.textContent = '⚠';
-            warningIcon.style.cssText = `
-                font-size: 28px;
-                line-height: 1;
-            `;
-            iconTextGroup.appendChild(warningIcon);
-            scamTypeContainer.appendChild(iconTextGroup);
+        // 可信度指示器
+        const confidenceBar = document.createElement('div');
+        confidenceBar.style.cssText = `
+            margin: 10px 0;
+            background: #e9ecef;
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+        `;
+        const confidenceFill = document.createElement('div');
+        confidenceFill.style.cssText = `
+            height: 100%;
+            background: ${prediction.confidence > 0.8 ? '#28a745' : '#ffc107'};
+            width: ${prediction.confidence * 100}%;
+            transition: width 0.3s ease;
+        `;
+        confidenceBar.appendChild(confidenceFill);
+        predictionCard.appendChild(confidenceBar);
 
-            const scamTypeText = document.createElement('div');
-            scamTypeText.style.cssText = `
-                font-size: 18px;
-                font-weight: bold;
-                color: #dc3545;
-            `;
-            scamTypeText.textContent = `詐騙類型：${prediction.ref_text}`;
-            scamTypeContainer.appendChild(scamTypeText);
+        // 可信度文字
+        const confidenceText = document.createElement('div');
+        confidenceText.style.cssText = `
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 10px;
+        `;
+        confidenceText.textContent = `經LLM分析可信度：${(prediction.confidence * 100).toFixed(1)}%`;
+        predictionCard.appendChild(confidenceText);
 
-            predictionCard.appendChild(scamTypeContainer);
+        // 證據列表
+        const evidenceTitle = document.createElement('div');
+        evidenceTitle.style.cssText = `
+            font-size: 14px;
+            font-weight: bold;
+            color: #495057;
+            margin: 10px 0 5px 0;
+        `;
+        evidenceTitle.textContent = '發現的證據：';
+        predictionCard.appendChild(evidenceTitle);
 
-            // 可信度指示器
-            const confidenceBar = document.createElement('div');
-            confidenceBar.style.cssText = `
-                margin: 10px 0;
-                background: #e9ecef;
-                border-radius: 4px;
-                height: 8px;
-                overflow: hidden;
-            `;
-            const confidenceFill = document.createElement('div');
-            confidenceFill.style.cssText = `
-                height: 100%;
-                background: ${prediction.confidence > 0.8 ? '#28a745' : '#ffc107'};
-                width: ${prediction.confidence * 100}%;
-                transition: width 0.3s ease;
-            `;
-            confidenceBar.appendChild(confidenceFill);
-            predictionCard.appendChild(confidenceBar);
-
-            // 可信度文字
-            const confidenceText = document.createElement('div');
-            confidenceText.style.cssText = `
-                font-size: 12px;
-                color: #6c757d;
-                margin-bottom: 10px;
-            `;
-            confidenceText.textContent = `經LLM分析可信度：${(prediction.confidence * 100).toFixed(1)}%`;
-            predictionCard.appendChild(confidenceText);
-
-            // 證據列表
-            const evidenceTitle = document.createElement('div');
-            evidenceTitle.style.cssText = `
-                font-size: 14px;
-                font-weight: bold;
-                color: #495057;
-                margin: 10px 0 5px 0;
-            `;
-            evidenceTitle.textContent = '發現的證據：';
-            predictionCard.appendChild(evidenceTitle);
-
-            const evidenceList = document.createElement('ul');
-            evidenceList.style.cssText = `
-                margin: 0;
-                padding-left: 20px;
-                color: #495057;
-            `;
-            prediction.evidences.forEach(evidence => {
-                const evidenceItem = document.createElement('li');
-                evidenceItem.textContent = evidence;
-                evidenceList.appendChild(evidenceItem);
-            });
-            predictionCard.appendChild(evidenceList);
-
-            fraudContainer.appendChild(predictionCard);
+        const evidenceList = document.createElement('ul');
+        evidenceList.style.cssText = `
+            margin: 0;
+            padding-left: 20px;
+            color: #495057;
+        `;
+        prediction.evidences.forEach(evidence => {
+            const evidenceItem = document.createElement('li');
+            evidenceItem.textContent = evidence;
+            evidenceList.appendChild(evidenceItem);
         });
+        predictionCard.appendChild(evidenceList);
 
-        fraudSection.appendChild(fraudContainer);
-    }
-
+        fraudContainer.appendChild(predictionCard);
+    });
+    fraudSection.appendChild(fraudContainer);
     contentArea.appendChild(fraudSection);
 }
 
@@ -1569,7 +1552,7 @@ async function extractPostAndComments(downloadPath) {
             // highlightEvidenceInOriginalPost(result.data.results[0].predictions);
             // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
             (async () => {
-                await displayAllAnalysisResults(result.data.results[0].predictions);
+                await displayAllAnalysisResults(result.data.results[0].predictions, lastPostContent);
             })();
         } catch (error) {
             console.error('❌ RAG 處理過程發生錯誤:', error);
@@ -1719,17 +1702,18 @@ function generateDownloadPath() {
 
 function generateCommentText(predictions) {
     let commentText = "【自動化分析摘要】此留言由AI分析產生，僅供參考：\n\n";
-
+    if (isNoFraudDetected(predictions)) {
+        commentText += '未偵測到詐騙類型';
+        return commentText.trim();
+    }
     predictions.forEach(prediction => {
         const scamType = prediction.ref_text;
         const confidence = (prediction.confidence * 100).toFixed(1);
         const firstEvidence = prediction.evidences.length > 0 ? prediction.evidences[0] : "無具體證據";
-
         commentText += `詐騙類型：${scamType} (可信度：${confidence}%)\n`;
         commentText += `主要證據：${firstEvidence}\n\n`;
     });
-
-    return commentText.trim(); // Remove trailing newlines
+    return commentText.trim();
 }
 
 function postAnalysisToFacebookComment(commentText) {
@@ -1901,7 +1885,7 @@ function displayComprehensiveRiskAssessment(predictions, data) {
 
     // 獲取評分依據
     const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
-    const hasFraudType = predictions.length > 0;
+    const hasFraudType = predictions.length > 0 && !isNoFraudDetected(predictions);
     const highestUrlLevel = getHighestUrlLevel(data.url_details);
 
     const criteriaList = document.createElement('div');
@@ -1927,7 +1911,7 @@ function displayComprehensiveRiskAssessment(predictions, data) {
 // 計算風險等級
 function calculateRiskLevel(predictions, data) {
     const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
-    const hasFraudType = predictions.length > 0;
+    const hasFraudType = predictions.length > 0 && !isNoFraudDetected(predictions);
     const highestUrlLevel = getHighestUrlLevel(data.url_details);
 
     // 根據評分標準判斷風險等級
@@ -2043,7 +2027,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 
                 // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
                 (async () => {
-                    await displayAllAnalysisResults(lastAnalysisResult.predictions);
+                    await displayAllAnalysisResults(lastAnalysisResult.predictions, lastPostContent);
                 })();
             } else {
                 console.log('沒有找到保存的數據，顯示提示信息');
@@ -2115,144 +2099,86 @@ function displayAnalysisHeader(content) {
     copyButton.onmouseout = () => {
         copyButton.style.backgroundColor = '#1877f2';
     };
-    copyButton.onclick = () => {
-        // 格式化完整的分析結果
+    copyButton.onclick = async () => {
         const predictions = content.data.results[0].predictions;
         let formattedText = '詐騙分析結果\n\n';
-        
-        // 1. 綜合風險評分
-        // formattedText += '🎯 綜合風險評分\n';
-        // formattedText += '================\n';
-        
-        // 讀取mockdata.json來獲取風險評分
-        fetch(chrome.runtime.getURL('mockdata.json'))
-            .then(response => response.json())
-            .then(data => {
-                const riskLevel = calculateRiskLevel(predictions, data);
-                formattedText += `風險等級：${getRiskLevelText(riskLevel)}\n`;
-                formattedText += `風險描述：${getRiskDescription(riskLevel)}\n\n`;
-                
-                // 評分依據
-                const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
-                const hasFraudType = predictions.length > 0;
-                const highestUrlLevel = getHighestUrlLevel(data.url_details);
-                
-                formattedText += '評分依據：\n';
-                formattedText += `• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}\n`;
-                formattedText += `• 詐騙類型: ${hasFraudType ? '有' : '無'}\n`;
-                formattedText += `• 最高URL風險等級: ${highestUrlLevel}\n\n`;
-                
-                // 2. 可疑項目
-                // formattedText += '🔍\n';
-                // formattedText += '====================\n';
-                
-                // 可疑LINE ID
-                const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
-                if (suspiciousLineIds.length > 0) {
-                    formattedText += '📱 可疑LINE ID：\n';
-                    suspiciousLineIds.forEach(item => {
-                        formattedText += `• ${item.id}\n`;
+        try {
+            let data = lastSuspiciousData;
+            if (!data) {
+                data = await getSuspiciousData(lastPostContent);
+                lastSuspiciousData = data;
+                await saveData();
+            }
+            const riskLevel = calculateRiskLevel(predictions, data);
+            formattedText += `風險等級：${getRiskLevelText(riskLevel)}\n`;
+            formattedText += `風險描述：${getRiskDescription(riskLevel)}\n\n`;
+            const hasSuspiciousLineId = data.line_id_details.some(item => item.result === 1);
+            const hasFraudType = predictions.length > 0 && !isNoFraudDetected(predictions);
+            const highestUrlLevel = getHighestUrlLevel(data.url_details);
+            formattedText += '評分依據：\n';
+            formattedText += `• 可疑LINE ID: ${hasSuspiciousLineId ? '有' : '無'}\n`;
+            formattedText += `• 詐騙類型: ${hasFraudType ? '有' : '無'}\n`;
+            formattedText += `• 最高URL風險等級: ${highestUrlLevel}\n\n`;
+            // 2. 可疑項目
+            const suspiciousLineIds = data.line_id_details.filter(item => item.result === 1);
+            if (suspiciousLineIds.length > 0) {
+                formattedText += '📱 可疑LINE ID：\n';
+                suspiciousLineIds.forEach(item => {
+                    formattedText += `• ${item.id}\n`;
+                });
+                formattedText += '\n';
+            }
+            const suspiciousUrls = data.url_details.filter(item => 
+                item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
+            );
+            if (suspiciousUrls.length > 0) {
+                formattedText += '🌐 可疑URL：\n';
+                suspiciousUrls.forEach(item => {
+                    formattedText += `• ${item.url} (${item.level}, 詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%)\n`;
+                });
+                formattedText += '\n';
+            }
+            if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
+                formattedText += '未偵測到可疑的LINE ID或URL\n\n';
+            }
+            // 3. 詐騙類型
+            formattedText += '⚠️ 詐騙類型分析\n';
+            formattedText += '================\n';
+            if (isNoFraudDetected(predictions)) {
+                formattedText += '未偵測到詐騙類型\n';
+            } else {
+                predictions.forEach((prediction, index) => {
+                    if (!prediction.ref_text) return;
+                    formattedText += `詐騙類型：${prediction.ref_text}\n`;
+                    formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
+                    formattedText += '發現的證據：\n';
+                    prediction.evidences.forEach((evidence, i) => {
+                        formattedText += `${i + 1}. ${evidence}\n`;
                     });
                     formattedText += '\n';
-                }
-                
-                // 可疑URL
-                const suspiciousUrls = data.url_details.filter(item => 
-                    item.status === 1 && (item.level === 'HIGH' || item.level === 'MEDIUM')
-                );
-                if (suspiciousUrls.length > 0) {
-                    formattedText += '🌐 可疑URL：\n';
-                    suspiciousUrls.forEach(item => {
-                        formattedText += `• ${item.url} (${item.level}, 詐騙機率: ${(item.scam_probability * 100).toFixed(2)}%)\n`;
-                    });
-                    formattedText += '\n';
-                }
-                
-                if (suspiciousLineIds.length === 0 && suspiciousUrls.length === 0) {
-                    formattedText += '未偵測到可疑的LINE ID或URL\n\n';
-                }
-                
-                // 3. 詐騙類型
-                formattedText += '⚠️ 詐騙類型分析\n';
-                formattedText += '================\n';
-                
-                if (predictions.length === 0) {
-                    formattedText += '未偵測到詐騙類型\n';
-                } else {
-                    predictions.forEach((prediction, index) => {
-                        formattedText += `詐騙類型：${prediction.ref_text}\n`;
-                        formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
-                        formattedText += '發現的證據：\n';
-                        prediction.evidences.forEach((evidence, i) => {
-                            formattedText += `${i + 1}. ${evidence}\n`;
-                        });
-                        formattedText += '\n';
-                    });
-                }
-
-                // 複製到剪貼簿
-                navigator.clipboard.writeText(formattedText).then(() => {
-                    // 顯示複製成功提示
-                    const originalText = copyButton.textContent;
-                    copyButton.textContent = '已複製！';
-                    copyButton.style.backgroundColor = '#28a745';
-                    setTimeout(() => {
-                        copyButton.textContent = originalText;
-                        copyButton.style.backgroundColor = '#1877f2';
-                    }, 2000);
-                }).catch(err => {
-                    console.error('複製失敗:', err);
-                    copyButton.textContent = '複製失敗';
-                    copyButton.style.backgroundColor = '#dc3545';
-                    setTimeout(() => {
-                        copyButton.textContent = '複製分析結果';
-                        copyButton.style.backgroundColor = '#1877f2';
-                    }, 2000);
                 });
-            })
-            .catch(error => {
-                console.error('讀取mockdata.json失敗:', error);
-                // 如果讀取失敗，只複製詐騙類型
-                formattedText += '⚠️ 詐騙類型分析\n';
-                formattedText += '================\n';
-                
-                if (predictions.length === 0) {
-                    formattedText += '未偵測到詐騙類型\n';
-                } else {
-                    predictions.forEach((prediction, index) => {
-                        formattedText += `詐騙類型：${prediction.ref_text}\n`;
-                        formattedText += `可信度：${(prediction.confidence * 100).toFixed(1)}%\n\n`;
-                        formattedText += '發現的證據：\n';
-                        prediction.evidences.forEach((evidence, i) => {
-                            formattedText += `${i + 1}. ${evidence}\n`;
-                        });
-                        formattedText += '\n';
-                    });
-                }
-
-                // 複製到剪貼簿
-                navigator.clipboard.writeText(formattedText).then(() => {
-                    const originalText = copyButton.textContent;
-                    copyButton.textContent = '已複製！';
-                    copyButton.style.backgroundColor = '#28a745';
-                    setTimeout(() => {
-                        copyButton.textContent = originalText;
-                        copyButton.style.backgroundColor = '#1877f2';
-                    }, 2000);
-                }).catch(err => {
-                    console.error('複製失敗:', err);
-                    copyButton.textContent = '複製失敗';
-                    copyButton.style.backgroundColor = '#dc3545';
-                    setTimeout(() => {
-                        copyButton.textContent = '複製分析結果';
-                        copyButton.style.backgroundColor = '#1877f2';
-                    }, 2000);
-                });
-            });
+            }
+            await navigator.clipboard.writeText(formattedText);
+            const originalText = copyButton.textContent;
+            copyButton.textContent = '已複製！';
+            copyButton.style.backgroundColor = '#28a745';
+            setTimeout(() => {
+                copyButton.textContent = originalText;
+                copyButton.style.backgroundColor = '#1877f2';
+            }, 2000);
+        } catch (error) {
+            console.error('複製分析結果失敗:', error);
+            copyButton.textContent = '複製失敗';
+            copyButton.style.backgroundColor = '#dc3545';
+            setTimeout(() => {
+                copyButton.textContent = '複製分析結果';
+                copyButton.style.backgroundColor = '#1877f2';
+            }, 2000);
+        }
     };
     title.appendChild(copyButton);
 
-    // // Create Post Comment button
+    // Create Post Comment button
     // const postCommentButton = document.createElement('button');
     // postCommentButton.textContent = '自動留言分析結果';
     // postCommentButton.id = 'postCommentButton';
@@ -2296,28 +2222,66 @@ function displayAnalysisHeader(content) {
 }
 
 // 新增函數：統一處理所有顯示，確保正確順序
-async function displayAllAnalysisResults(predictions) {
+async function displayAllAnalysisResults(predictions, postText) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
-
     try {
-        // 讀取mockdata.json
-        const response = await fetch(chrome.runtime.getURL('mockdata.json'));
-        const data = await response.json();
-
+        // 取得API回傳資料
+        const data = await getSuspiciousData(postText);
+        lastSuspiciousData = data;
+        await saveData();
         // 1. 綜合風險評分
         await displayComprehensiveRiskAssessment(predictions, data);
-        
         // 2. 可疑項目
         await displaySuspiciousItems(data);
-        
         // 3. 詐騙類型
         displayFraudTypes(predictions);
     } catch (error) {
-        console.error('讀取mockdata.json失敗:', error);
-        // 如果讀取失敗，只顯示詐騙類型
+        console.error('取得可疑資料API失敗:', error);
+        // fallback: 只顯示詐騙類型
         displayFraudTypes(predictions);
     }
 }
 
-// 修改 displayComprehensiveRiskAssessment 函數，接受 data 參數
+// 新增：判斷是否無偵測到詐騙類型
+function isNoFraudDetected(predictions) {
+    if (!Array.isArray(predictions) || predictions.length === 0) return true;
+    // 如果所有 prediction 都沒有 ref_text，視為無偵測到詐騙類型
+    if (predictions.every(p => !p.ref_text || p.ref_text === '' || p.ref_text === '無法辨識' || p.ref_text === '未知')) {
+        // 也可加強 plain_text 關鍵字判斷
+        if (predictions.length === 1) {
+            const p = predictions[0];
+            if (
+                typeof p.plain_text === 'string' &&
+                (
+                    p.plain_text.includes('沒有符合條件的比對結果') ||
+                    p.plain_text.includes('沒有任何候選項的信心分數') ||
+                    p.plain_text.includes('都低於') ||
+                    p.plain_text.includes('[]')
+                )
+            ) {
+                return true;
+            }
+        }
+        // 沒有 ref_text 也算無偵測到
+        return true;
+    }
+    return false;
+}
+
+// 新增：取得可疑資料（LINE ID/URL）
+async function getSuspiciousData(postText) {
+    // 透過background.js呼叫API
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: 'analyzeWithSecondAPI',
+            description: postText
+        }, (response) => {
+            if (response && !response.error) {
+                resolve(response);
+            } else {
+                reject(response && response.error ? response.error : 'API error');
+            }
+        });
+    });
+}
