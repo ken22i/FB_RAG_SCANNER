@@ -69,15 +69,7 @@
 
 ---
 
-## 🔒 權限說明（Permissions）
 
-- `scripting`：注入分析腳本到 Facebook 頁面
-- `downloads`：自動下載貼文圖片
-- `activeTab`：取得當前分頁資訊
-- `storage`：本地儲存分析結果與貼文內容
-- `host_permissions: https://www.facebook.com/*`：僅作用於 Facebook 網域
-
----
 
 ## 🧪 開發與建置（Development / Build）
 
@@ -96,19 +88,3 @@
 
 
 ---
-
-## 📜 授權條款（License）
-
-MIT License
-
----
-
-## 🙋‍♂️ 聯絡與貢獻（Contact & Contributing）
-
-- 歡迎提交 Pull Request 或 Issue 回報問題
-- 請於提交前確保程式碼有適當註解與測試
-- 聯絡方式：請於 GitHub Issue 留言或 Pull Request
-
----
-
-如需更詳細的技術說明或有其他需求，歡迎隨時聯絡或參與貢獻！ 
