@@ -1,3 +1,13 @@
+/*
+===============================================================================
+    Module Name: content.js
+    Description: 負責彈出視窗的按鈕邏輯
+    Author: Jerry, Ken, SJ
+    Last Updated: 2025-06-23
+    Version: 1.0.0
+    Notes: 無
+===============================================================================
+*/
 document.addEventListener('DOMContentLoaded', () => {
     const analyzeButton = document.getElementById('analyze');
     const viewResultsButton = document.getElementById('viewResults');

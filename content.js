@@ -1,3 +1,13 @@
+/*
+===============================================================================
+    Module Name: content.js
+    Description: 負責分析貼文的主要邏輯
+    Author: Jerry, Ken, SJ
+    Last Updated: 2025-06-23
+    Version: 1.0.0
+    Notes: 無
+===============================================================================
+*/
 // 添加全局變量來存儲分析結果和原始貼文內容
 let lastAnalysisResult = null;
 let lastPostContent = null;
@@ -249,7 +259,7 @@ async function checkRAGStatus(jobId) {
     }
 }
 
-// 新增函數：調用第二個API進行分析
+// 調用URL分析API進行分析
 async function analyzeWithSecondAPI(description) {
     try {
         const response = await chrome.runtime.sendMessage({
@@ -263,21 +273,21 @@ async function analyzeWithSecondAPI(description) {
     }
 }
 
-// 示例函數：使用第二個API分析文本
+// 使用URL分析API分析文本
 async function analyzeTextWithSecondAPI(text) {
     try {
-        console.log('🚀 開始使用第二個API分析文本');
+        console.log('🚀 開始使用URL分析API分析文本');
         
         // 調用第二個API
         const result = await analyzeWithSecondAPI(text);
-        console.log('📊 第二個API分析結果:', result);
+        console.log('📊 URL分析API分析結果:', result);
         
         // 這裡可以處理返回的數據，格式應該與mockdata.json相同
         // result 應該包含 line_id_details, url_details 等字段
         
         return result;
     } catch (error) {
-        console.error('❌ 第二個API分析失敗:', error);
+        console.error('❌ URL分析API分析失敗:', error);
         throw error;
     }
 }
@@ -1020,7 +1030,7 @@ async function updateDisplay(content, isRAGResult = false, showAdditionalContent
         
         // 保存到 storage
         await saveData();
-
+        TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
         // 在原始貼文中高亮顯示證據
         // highlightEvidenceInOriginalPost(predictions);
 
@@ -1240,7 +1250,7 @@ function displayFraudTypes(predictions) {
     contentArea.appendChild(fraudSection);
 }
 
-// 新增函數：顯示可疑LINE ID和可疑URL
+// 顯示可疑LINE ID和可疑URL
 function displaySuspiciousItems(data) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
@@ -1548,8 +1558,9 @@ async function extractPostAndComments(downloadPath) {
             await saveData();
             
             displayAnalysisHeader(result); // 顯示詐騙分析結果標題和按鈕
+            TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
             // 高亮顯示證據
-            // highlightEvidenceInOriginalPost(result.data.results[0].predictions);
+            highlightEvidenceInOriginalPost(result.data.results[0].predictions);
             // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
             (async () => {
                 await displayAllAnalysisResults(result.data.results[0].predictions, lastPostContent);
@@ -1716,70 +1727,70 @@ function generateCommentText(predictions) {
     return commentText.trim();
 }
 
-function postAnalysisToFacebookComment(commentText) {
-    console.log("Attempting to post comment:", commentText);
+// function postAnalysisToFacebookComment(commentText) {
+//     console.log("Attempting to post comment:", commentText);
 
-    // Find the comment input field
-    const inputField = document.querySelector('div[role="textbox"][aria-label*="comment"], div[role="textbox"][aria-label*="留言"]');
+//     // Find the comment input field
+//     const inputField = document.querySelector('div[role="textbox"][aria-label*="comment"], div[role="textbox"][aria-label*="留言"]');
 
-    if (inputField) {
-        console.log("Comment input field found:", inputField);
-        // Ensure it's contentEditable for divs
-        if (inputField.tagName.toLowerCase() === 'div') {
-            inputField.setAttribute('contenteditable', 'true');
-        }
+//     if (inputField) {
+//         console.log("Comment input field found:", inputField);
+//         // Ensure it's contentEditable for divs
+//         if (inputField.tagName.toLowerCase() === 'div') {
+//             inputField.setAttribute('contenteditable', 'true');
+//         }
         
-        inputField.focus();
+//         inputField.focus();
         
-        // Set the text content
-        // Using innerText to better simulate user input, especially for line breaks
-        inputField.innerText = commentText; 
+//         // Set the text content
+//         // Using innerText to better simulate user input, especially for line breaks
+//         inputField.innerText = commentText; 
 
-        // Dispatch events to make Facebook's JS acknowledge the input
-        inputField.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-        // Some FB implementations might also need a keyup or paste event
-        inputField.dispatchEvent(new Event('keyup', { bubbles: true, cancelable: true }));
-        inputField.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+//         // Dispatch events to make Facebook's JS acknowledge the input
+//         inputField.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+//         // Some FB implementations might also need a keyup or paste event
+//         inputField.dispatchEvent(new Event('keyup', { bubbles: true, cancelable: true }));
+//         inputField.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 
 
-        // Find the submit button (this selector might need to be very specific)
-        // It's often near the input field, but global selectors are tried first.
-        // Prioritize buttons that are explicitly for posting/sending a comment.
-        let submitButton = document.querySelector(
-            'button[aria-label="Post comment"], button[aria-label="發佈留言"], ' + // Specific labels first
-            'button[aria-label*="Post"], button[aria-label*="發佈"], ' + // More general labels
-            'button[type="submit"] svg, button[data-testid="react-composer-post-button"]' // Structure/test-id based
-        );
+//         // Find the submit button (this selector might need to be very specific)
+//         // It's often near the input field, but global selectors are tried first.
+//         // Prioritize buttons that are explicitly for posting/sending a comment.
+//         let submitButton = document.querySelector(
+//             'button[aria-label="Post comment"], button[aria-label="發佈留言"], ' + // Specific labels first
+//             'button[aria-label*="Post"], button[aria-label*="發佈"], ' + // More general labels
+//             'button[type="submit"] svg, button[data-testid="react-composer-post-button"]' // Structure/test-id based
+//         );
         
-        // If a general submit button is not found, try to find one relative to the input field
-        if (!submitButton && inputField.form) {
-            submitButton = inputField.form.querySelector('button[type="submit"]');
-        }
-        // Fallback: Look for a button with a send icon (data-icon="send")
-        if (!submitButton) {
-            submitButton = document.querySelector('button[data-icon="send"], button[aria-label="Send"]');
-        }
+//         // If a general submit button is not found, try to find one relative to the input field
+//         if (!submitButton && inputField.form) {
+//             submitButton = inputField.form.querySelector('button[type="submit"]');
+//         }
+//         // Fallback: Look for a button with a send icon (data-icon="send")
+//         if (!submitButton) {
+//             submitButton = document.querySelector('button[data-icon="send"], button[aria-label="Send"]');
+//         }
 
 
-        if (submitButton) {
-            console.log("Submit button found:", submitButton);
-            // Brief delay to ensure text is processed, then click
-            setTimeout(() => {
-                submitButton.click();
-                console.log("Comment posted successfully (simulated).");
-                // TODO: Add user feedback (e.g., a small notification)
-            }, 500); // 500ms delay, might need adjustment
-        } else {
-            console.error("Submit button not found.");
-            alert("無法找到留言發佈按鈕。請手動發佈。");
-        }
-    } else {
-        console.error("Comment input field not found.");
-        alert("無法找到留言輸入框。");
-    }
-}
+//         if (submitButton) {
+//             console.log("Submit button found:", submitButton);
+//             // Brief delay to ensure text is processed, then click
+//             setTimeout(() => {
+//                 submitButton.click();
+//                 console.log("Comment posted successfully (simulated).");
+//                 // TODO: Add user feedback (e.g., a small notification)
+//             }, 500); // 500ms delay, might need adjustment
+//         } else {
+//             console.error("Submit button not found.");
+//             alert("無法找到留言發佈按鈕。請手動發佈。");
+//         }
+//     } else {
+//         console.error("Comment input field not found.");
+//         alert("無法找到留言輸入框。");
+//     }
+// }
 
-// 新增函數：綜合風險評分
+// 綜合風險評分
 function displayComprehensiveRiskAssessment(predictions, data) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
@@ -2021,9 +2032,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 
                 // 顯示詐騙分析結果標題和按鈕
                 displayAnalysisHeader(lastAnalysisResult.content);
-                
+
+                TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
                 // 重新高亮顯示證據
-                // highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
+                highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
                 
                 // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
                 (async () => {
@@ -2221,7 +2233,7 @@ function displayAnalysisHeader(content) {
     contentArea.appendChild(section);
 }
 
-// 新增函數：統一處理所有顯示，確保正確順序
+// 統一處理所有顯示，確保正確順序
 async function displayAllAnalysisResults(predictions, postText) {
     const contentArea = document.getElementById('fb-analyzer-content');
     if (!contentArea) return;
@@ -2243,7 +2255,7 @@ async function displayAllAnalysisResults(predictions, postText) {
     }
 }
 
-// 新增：判斷是否無偵測到詐騙類型
+// 判斷是否無偵測到詐騙類型
 function isNoFraudDetected(predictions) {
     if (!Array.isArray(predictions) || predictions.length === 0) return true;
     // 如果所有 prediction 都沒有 ref_text，視為無偵測到詐騙類型

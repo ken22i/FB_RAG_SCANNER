@@ -1,3 +1,13 @@
+/*
+===============================================================================
+    Module Name: background.js
+    Description: 負責API的發送
+    Author: Jerry, Ken, SJ
+    Last Updated: 2025-06-23
+    Version: 1.0.0
+    Notes: 無
+===============================================================================
+*/
 const API_BASE_URL = 'http://192.168.70.88:8000/api/v1/rag';
 const AUTH_HEADER = 'Basic ' + btoa('user:systemadmin!23');
 
