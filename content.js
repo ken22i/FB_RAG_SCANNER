@@ -1030,7 +1030,7 @@ async function updateDisplay(content, isRAGResult = false, showAdditionalContent
         
         // 保存到 storage
         await saveData();
-        TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
+        // TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
         // 在原始貼文中高亮顯示證據
         // highlightEvidenceInOriginalPost(predictions);
 
@@ -1217,7 +1217,7 @@ function displayFraudTypes(predictions) {
             color: #6c757d;
             margin-bottom: 10px;
         `;
-        confidenceText.textContent = `經LLM分析可信度：${(prediction.confidence * 100).toFixed(1)}%`;
+        confidenceText.textContent = `信心度：${(prediction.confidence * 100).toFixed(1)}%`;
         predictionCard.appendChild(confidenceText);
 
         // 證據列表
@@ -1558,9 +1558,9 @@ async function extractPostAndComments(downloadPath) {
             await saveData();
             
             displayAnalysisHeader(result); // 顯示詐騙分析結果標題和按鈕
-            TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
+            // TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
             // 高亮顯示證據
-            highlightEvidenceInOriginalPost(result.data.results[0].predictions);
+            // highlightEvidenceInOriginalPost(result.data.results[0].predictions);
             // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
             (async () => {
                 await displayAllAnalysisResults(result.data.results[0].predictions, lastPostContent);
@@ -2033,9 +2033,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // 顯示詐騙分析結果標題和按鈕
                 displayAnalysisHeader(lastAnalysisResult.content);
 
-                TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
+                // TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
                 // 重新高亮顯示證據
-                highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
+                // highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
                 
                 // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
                 (async () => {
