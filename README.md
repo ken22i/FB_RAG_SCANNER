@@ -69,7 +69,31 @@
 
 ---
 
+### 🗂️ 服務流程架構圖
 
+本服務會串接兩個部署於 192.168.70.88 的 API 服務（RAGCORE-X 與 scam-shield），流程如下：
+
+```mermaid
+flowchart TD
+    A[使用者於 Facebook 貼文頁面] 
+    B[Chrome 擴充功能<br>content.js]
+    C[RAGCORE-X<br>192.168.70.88]
+    D[scam-shield<br>192.168.70.88]
+    E[顯示分析結果於前端]
+
+    A --> B
+    B -- 呼叫貼文詐騙語意分析 --> C
+    B -- 呼叫 LINE ID/URL 檢查 --> D
+    C -- 分析結果回傳 --> B
+    D -- 檢查結果回傳 --> B
+    B --> E
+```
+
+- **RAGCORE-X**：負責貼文詐騙語意分析
+- **scam-shield**：負責 LINE ID/URL 可疑檢查
+- 兩個 API 均部署於 192.168.70.88
+
+---
 
 ## 🧪 開發與建置（Development / Build）
 
