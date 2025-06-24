@@ -1032,7 +1032,7 @@ async function updateDisplay(content, isRAGResult = false, showAdditionalContent
         await saveData();
         // TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
         // 在原始貼文中高亮顯示證據
-        // highlightEvidenceInOriginalPost(predictions);
+        highlightEvidenceInOriginalPost(predictions);
 
         // 只有在需要顯示額外內容時才調用這些函數
         if (showAdditionalContent) {
@@ -1560,7 +1560,7 @@ async function extractPostAndComments(downloadPath) {
             displayAnalysisHeader(result); // 顯示詐騙分析結果標題和按鈕
             // TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
             // 高亮顯示證據
-            // highlightEvidenceInOriginalPost(result.data.results[0].predictions);
+            highlightEvidenceInOriginalPost(result.data.results[0].predictions);
             // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
             (async () => {
                 await displayAllAnalysisResults(result.data.results[0].predictions, lastPostContent);
@@ -2035,7 +2035,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 // TODO:高亮文本若再同一元素有複數次高亮會覆蓋上一次的高亮結果
                 // 重新高亮顯示證據
-                // highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
+                highlightEvidenceInOriginalPost(lastAnalysisResult.predictions);
                 
                 // 按照新順序顯示：1. 綜合風險評分 2. 可疑項目 3. 詐騙類型
                 (async () => {
